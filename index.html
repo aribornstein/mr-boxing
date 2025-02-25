@@ -1,743 +1,878 @@
-// Quest 3 Mixed Reality Boxing Game
-// A WebXR application for passthrough boxing on Meta Quest 3
-
-// Main application entry point
-import * as THREE from 'three';
-
-// DOM elements setup
-document.addEventListener('DOMContentLoaded', () => {
-  // Create our UI elements
-  const startButton = document.createElement('button');
-  startButton.textContent = 'Enter Mixed Reality Boxing';
-  startButton.style.position = 'absolute';
-  startButton.style.top = '50%';
-  startButton.style.left = '50%';
-  startButton.style.transform = 'translate(-50%, -50%)';
-  startButton.style.padding = '20px';
-  startButton.style.fontSize = '24px';
-  startButton.style.backgroundColor = '#ff5555';
-  startButton.style.color = 'white';
-  startButton.style.border = 'none';
-  startButton.style.borderRadius = '10px';
-  startButton.style.cursor = 'pointer';
-  
-  // Append to body
-  document.body.appendChild(startButton);
-  
-  // On button click, start the XR session
-  startButton.addEventListener('click', initXR);
-});
-
-// Main application state
-const appState = {
-  scene: null,
-  camera: null,
-  renderer: null,
-  session: null,
-  referenceSpace: null,
-  punchTargets: [],
-  score: 0,
-  combo: 0,
-  gameStartTime: 0,
-  gameActive: false,
-  difficulty: 'medium',
-  punchSound: null,
-  comboSound: null,
-  scoreElement: null,
-  comboElement: null,
-  timerElement: null,
-  controllers: {
-    left: null,
-    right: null
-  },
-  handModels: {
-    left: null,
-    right: null
-  },
-  collisionDetected: false,
-  targetSpawnRate: 2000, // ms between target spawns
-  gameLength: 120000 // 2 minute game
-};
-
-function initXR() {
-  // Check if WebXR is available
-  if (!navigator.xr) {
-    showError('WebXR not available in your browser');
-    return;
-  }
-  
-  // Request a session with passthrough
-  navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-    if (supported) {
-      navigator.xr.requestSession('immersive-ar', {
-        requiredFeatures: ['local-floor', 'hit-test'],
-        optionalFeatures: ['hand-tracking', 'passthrough']
-      }).then(onSessionStarted)
-        .catch(err => showError('Failed to start AR session: ' + err.message));
-    } else {
-      showError('Immersive AR not supported on this device');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Quest 3 MR Boxing Game</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
     }
-  });
-}
-
-function showError(message) {
-  const errorDiv = document.createElement('div');
-  errorDiv.textContent = message;
-  errorDiv.style.position = 'absolute';
-  errorDiv.style.top = '20%';
-  errorDiv.style.left = '50%';
-  errorDiv.style.transform = 'translate(-50%, -50%)';
-  errorDiv.style.color = 'red';
-  errorDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-  errorDiv.style.padding = '20px';
-  errorDiv.style.borderRadius = '10px';
-  document.body.appendChild(errorDiv);
-}
-
-function onSessionStarted(session) {
-  appState.session = session;
-  
-  // Hide the start button
-  document.querySelector('button').style.display = 'none';
-  
-  // Set up Three.js
-  setupThreeJS();
-  
-  // Configure the WebXR animation loop
-  session.requestReferenceSpace('local-floor').then((referenceSpace) => {
-    appState.referenceSpace = referenceSpace;
     
-    // Start frame loop
-    session.requestAnimationFrame(onXRFrame);
-  });
+    body {
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+      background-color: #000;
+      color: #fff;
+    }
+    
+    #start-button {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 20px;
+      font-size: 24px;
+      background-color: #ff5555;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    
+    #start-button:hover {
+      background-color: #ff3333;
+    }
+    
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -70%);
+      font-size: 24px;
+      color: white;
+      text-align: center;
+    }
+    
+    #browser-warning {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: rgba(255, 0, 0, 0.8);
+      padding: 20px;
+      border-radius: 10px;
+      max-width: 80%;
+      text-align: center;
+      display: none;
+    }
+    
+    #info {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      color: #aaa;
+      font-size: 14px;
+      max-width: 80%;
+    }
+    
+    #score, #combo, #timer {
+      position: absolute;
+      padding: 10px;
+      background-color: rgba(0, 0, 0, 0.5);
+      border-radius: 5px;
+      font-size: 24px;
+      display: none;
+    }
+    
+    #score {
+      top: 10px;
+      left: 10px;
+    }
+    
+    #combo {
+      top: 10px;
+      right: 10px;
+    }
+    
+    #timer {
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+  </style>
+</head>
+<body>
+  <button id="start-button">Enter Mixed Reality Boxing</button>
+  <div id="loading">Loading...</div>
+  <div id="browser-warning">This application requires WebXR support.<br>Please open this page on your Quest 3 using Meta Browser.</div>
+  <div id="info">
+    <p>Quest 3 Mixed Reality Boxing Game</p>
+    <p>Punch the green targets that appear in your environment to score points!</p>
+  </div>
   
-  // Handle session end
-  session.addEventListener('end', onSessionEnded);
-  
-  // Create UI elements for game
-  createGameUI();
-  
-  // Load audio
-  loadAudio();
-  
-  // Set up controllers
-  setupControllers(session);
-  
-  // Start game logic
-  startGame();
-}
+  <div id="score">Score: 0</div>
+  <div id="combo">Combo: 0</div>
+  <div id="timer">2:00</div>
 
-function setupThreeJS() {
-  // Create scene
-  const scene = new THREE.Scene();
-  appState.scene = scene;
-  
-  // Create camera (will be updated by WebXR)
-  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-  appState.camera = camera;
-  
-  // Create WebGL renderer with XR support
-  const renderer = new THREE.WebGLRenderer({
-    antialias: true,
-    alpha: true
-  });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.xr.enabled = true;
-  appState.renderer = renderer;
-  
-  // Add ambient light
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-  scene.add(ambientLight);
-  
-  // Add directional light
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  directionalLight.position.set(0, 10, 0);
-  scene.add(directionalLight);
-  
-  // Append canvas to body
-  document.body.appendChild(renderer.domElement);
-}
+  <!-- Load Three.js from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
-function createGameUI() {
-  // Create score display
-  const scoreElement = document.createElement('div');
-  scoreElement.id = 'score';
-  scoreElement.textContent = 'Score: 0';
-  scoreElement.style.position = 'absolute';
-  scoreElement.style.top = '10px';
-  scoreElement.style.left = '10px';
-  scoreElement.style.color = 'white';
-  scoreElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-  scoreElement.style.padding = '10px';
-  scoreElement.style.borderRadius = '5px';
-  scoreElement.style.fontSize = '24px';
-  document.body.appendChild(scoreElement);
-  appState.scoreElement = scoreElement;
-  
-  // Create combo display
-  const comboElement = document.createElement('div');
-  comboElement.id = 'combo';
-  comboElement.textContent = 'Combo: 0';
-  comboElement.style.position = 'absolute';
-  comboElement.style.top = '10px';
-  comboElement.style.right = '10px';
-  comboElement.style.color = 'white';
-  comboElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-  comboElement.style.padding = '10px';
-  comboElement.style.borderRadius = '5px';
-  comboElement.style.fontSize = '24px';
-  document.body.appendChild(comboElement);
-  appState.comboElement = comboElement;
-  
-  // Create timer display
-  const timerElement = document.createElement('div');
-  timerElement.id = 'timer';
-  timerElement.textContent = '2:00';
-  timerElement.style.position = 'absolute';
-  timerElement.style.top = '10px';
-  timerElement.style.left = '50%';
-  timerElement.style.transform = 'translateX(-50%)';
-  timerElement.style.color = 'white';
-  timerElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-  timerElement.style.padding = '10px';
-  timerElement.style.borderRadius = '5px';
-  timerElement.style.fontSize = '24px';
-  document.body.appendChild(timerElement);
-  appState.timerElement = timerElement;
-}
+  <script>
+    // Main application state
+    const appState = {
+      scene: null,
+      camera: null,
+      renderer: null,
+      session: null,
+      referenceSpace: null,
+      punchTargets: [],
+      score: 0,
+      combo: 0,
+      gameStartTime: 0,
+      gameActive: false,
+      difficulty: 'medium',
+      punchSound: null,
+      comboSound: null,
+      scoreElement: null,
+      comboElement: null,
+      timerElement: null,
+      controllers: {
+        left: null,
+        right: null
+      },
+      handModels: {
+        left: null,
+        right: null
+      },
+      collisionDetected: false,
+      targetSpawnRate: 2000, // ms between target spawns
+      gameLength: 120000 // 2 minute game
+    };
 
-function loadAudio() {
-  // Load punch sound
-  const punchSound = new Audio();
-  punchSound.src = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/sounds/punch.mp3';
-  appState.punchSound = punchSound;
-  
-  // Load combo sound
-  const comboSound = new Audio();
-  comboSound.src = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/sounds/dingding.mp3';
-  appState.comboSound = comboSound;
-}
+    // DOM elements
+    const startButton = document.getElementById('start-button');
+    const loadingElement = document.getElementById('loading');
+    const browserWarning = document.getElementById('browser-warning');
+    const infoElement = document.getElementById('info');
+    const scoreElement = document.getElementById('score');
+    const comboElement = document.getElementById('combo');
+    const timerElement = document.getElementById('timer');
 
-function setupControllers(session) {
-  // Set up VR controllers or hand tracking
-  session.addEventListener('inputsourceschange', (event) => {
-    // Handle new input sources
-    for (let inputSource of event.added) {
-      const controller = appState.renderer.xr.getController(inputSource.handedness === 'left' ? 0 : 1);
-      controller.userData.inputSource = inputSource;
+    // Hide loading initially
+    loadingElement.style.display = 'none';
+
+    // Check if WebXR is available
+    if (navigator.xr) {
+      navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+        if (!supported) {
+          browserWarning.style.display = 'block';
+          startButton.style.display = 'none';
+        }
+      }).catch(error => {
+        console.error('Error checking XR support:', error);
+        browserWarning.style.display = 'block';
+        startButton.style.display = 'none';
+      });
+    } else {
+      browserWarning.style.display = 'block';
+      startButton.style.display = 'none';
+    }
+
+    // Set up button click event
+    startButton.addEventListener('click', () => {
+      startButton.style.display = 'none';
+      infoElement.style.display = 'none';
+      loadingElement.style.display = 'block';
+      initXR();
+    });
+
+    function initXR() {
+      if (!navigator.xr) {
+        showError('WebXR not available in your browser');
+        return;
+      }
       
-      // Create hand models based on handedness
-      if (inputSource.hand) {
-        // Using hand tracking
-        const handModel = createHandModel(inputSource.handedness);
-        controller.add(handModel);
-        appState.handModels[inputSource.handedness] = handModel;
+      // Request a session with passthrough
+      navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+        if (supported) {
+          navigator.xr.requestSession('immersive-ar', {
+            requiredFeatures: ['local-floor', 'hit-test'],
+            optionalFeatures: ['hand-tracking', 'passthrough']
+          }).then(onSessionStarted)
+            .catch(err => {
+              showError('Failed to start AR session: ' + err.message);
+              startButton.style.display = 'block';
+              loadingElement.style.display = 'none';
+            });
+        } else {
+          showError('Immersive AR not supported on this device');
+          startButton.style.display = 'block';
+          loadingElement.style.display = 'none';
+        }
+      });
+    }
+
+    function showError(message) {
+      const errorDiv = document.createElement('div');
+      errorDiv.textContent = message;
+      errorDiv.style.position = 'absolute';
+      errorDiv.style.top = '20%';
+      errorDiv.style.left = '50%';
+      errorDiv.style.transform = 'translate(-50%, -50%)';
+      errorDiv.style.color = 'red';
+      errorDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+      errorDiv.style.padding = '20px';
+      errorDiv.style.borderRadius = '10px';
+      document.body.appendChild(errorDiv);
+    }
+
+    function onSessionStarted(session) {
+      appState.session = session;
+      
+      loadingElement.style.display = 'none';
+      
+      // Set up Three.js
+      setupThreeJS();
+      
+      // Configure the WebXR animation loop
+      session.requestReferenceSpace('local-floor').then((referenceSpace) => {
+        appState.referenceSpace = referenceSpace;
+        
+        // Start frame loop
+        session.requestAnimationFrame(onXRFrame);
+      });
+      
+      // Handle session end
+      session.addEventListener('end', onSessionEnded);
+      
+      // Show game UI elements
+      scoreElement.style.display = 'block';
+      comboElement.style.display = 'block';
+      timerElement.style.display = 'block';
+      
+      // Store UI elements in appState
+      appState.scoreElement = scoreElement;
+      appState.comboElement = comboElement;
+      appState.timerElement = timerElement;
+      
+      // Load audio
+      loadAudio();
+      
+      // Set up controllers
+      setupControllers(session);
+      
+      // Start game logic
+      startGame();
+    }
+
+    function setupThreeJS() {
+      // Create scene
+      const scene = new THREE.Scene();
+      appState.scene = scene;
+      
+      // Create camera (will be updated by WebXR)
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      appState.camera = camera;
+      
+      // Create WebGL renderer with XR support
+      const renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true
+      });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.xr.enabled = true;
+      appState.renderer = renderer;
+      
+      // Add ambient light
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+      scene.add(ambientLight);
+      
+      // Add directional light
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(0, 10, 0);
+      scene.add(directionalLight);
+      
+      // Append canvas to body
+      document.body.appendChild(renderer.domElement);
+    }
+
+    function loadAudio() {
+      // Create audio context
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      const audioContext = new AudioContext();
+      
+      // Create punch sound (using oscillator for simplicity)
+      appState.punchSound = {
+        play: function() {
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          
+          oscillator.type = 'square';
+          oscillator.frequency.setValueAtTime(180, audioContext.currentTime);
+          oscillator.frequency.exponentialRampToValueAtTime(40, audioContext.currentTime + 0.2);
+          
+          gainNode.gain.setValueAtTime(0.8, audioContext.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.2);
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          oscillator.start();
+          oscillator.stop(audioContext.currentTime + 0.2);
+        }
+      };
+      
+      // Create combo sound
+      appState.comboSound = {
+        play: function() {
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          
+          oscillator.type = 'sine';
+          oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+          oscillator.frequency.setValueAtTime(660, audioContext.currentTime + 0.1);
+          
+          gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.3);
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          oscillator.start();
+          oscillator.stop(audioContext.currentTime + 0.3);
+        }
+      };
+    }
+
+    function setupControllers(session) {
+      // Set up VR controllers or hand tracking
+      session.addEventListener('inputsourceschange', (event) => {
+        // Handle new input sources
+        for (let inputSource of event.added) {
+          const controller = appState.renderer.xr.getController(inputSource.handedness === 'left' ? 0 : 1);
+          controller.userData.inputSource = inputSource;
+          
+          // Create hand models based on handedness
+          if (inputSource.hand) {
+            // Using hand tracking
+            const handModel = createHandModel(inputSource.handedness);
+            controller.add(handModel);
+            appState.handModels[inputSource.handedness] = handModel;
+          } else {
+            // Using controllers
+            const controllerModel = createControllerModel(inputSource.handedness);
+            controller.add(controllerModel);
+          }
+          
+          appState.scene.add(controller);
+          appState.controllers[inputSource.handedness] = controller;
+        }
+        
+        // Handle removed input sources
+        for (let inputSource of event.removed) {
+          const controller = appState.controllers[inputSource.handedness];
+          if (controller) {
+            appState.scene.remove(controller);
+            appState.controllers[inputSource.handedness] = null;
+          }
+        }
+      });
+    }
+
+    function createHandModel(handedness) {
+      // Create a simple boxing glove mesh
+      const geometry = new THREE.BoxGeometry(0.08, 0.15, 0.08);
+      const material = new THREE.MeshLambertMaterial({ 
+        color: handedness === 'left' ? 0x3333ff : 0xff3333,
+        transparent: true,
+        opacity: 0.8
+      });
+      
+      const glove = new THREE.Mesh(geometry, material);
+      glove.position.set(0, 0, -0.05);
+      
+      // Add a small sphere for collision detection
+      const colliderGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+      const colliderMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffff00,
+        transparent: true,
+        opacity: 0.0  // Make it invisible
+      });
+      
+      const collider = new THREE.Mesh(colliderGeometry, colliderMaterial);
+      collider.position.set(0, 0, -0.1);
+      glove.add(collider);
+      
+      return glove;
+    }
+
+    function createControllerModel(handedness) {
+      // Create a simple controller model (similar to the hand model)
+      return createHandModel(handedness);
+    }
+
+    function startGame() {
+      // Start the game
+      appState.gameActive = true;
+      appState.gameStartTime = Date.now();
+      appState.score = 0;
+      appState.combo = 0;
+      
+      // Set difficulty
+      setDifficulty(appState.difficulty);
+      
+      // Update displays
+      updateScoreDisplay();
+      updateComboDisplay();
+      
+      // Start spawning targets
+      scheduleNextTarget();
+      
+      // Start the countdown timer
+      updateTimer();
+    }
+
+    function setDifficulty(level) {
+      switch(level) {
+        case 'easy':
+          appState.targetSpawnRate = 3000;
+          break;
+        case 'medium':
+          appState.targetSpawnRate = 2000;
+          break;
+        case 'hard':
+          appState.targetSpawnRate = 1000;
+          break;
+        default:
+          appState.targetSpawnRate = 2000;
+      }
+    }
+
+    function scheduleNextTarget() {
+      if (!appState.gameActive) return;
+      
+      setTimeout(() => {
+        spawnTarget();
+        scheduleNextTarget();
+      }, appState.targetSpawnRate * (0.8 + Math.random() * 0.4)); // Add some randomness
+    }
+
+    function spawnTarget() {
+      if (!appState.gameActive) return;
+      
+      // Create a target (punchable object)
+      const geometry = new THREE.SphereGeometry(0.15, 32, 32);
+      const material = new THREE.MeshLambertMaterial({ 
+        color: 0x00ff00,
+        transparent: true,
+        opacity: 0.8
+      });
+      
+      const target = new THREE.Mesh(geometry, material);
+      
+      // Position the target in the player's area
+      // We'll place it randomly in front of the player
+      const distance = 0.7 + Math.random() * 0.6; // 0.7m to 1.3m away
+      const horizontalAngle = (Math.random() - 0.5) * Math.PI * 0.8; // -40 to 40 degrees
+      const verticalPosition = 1.2 + (Math.random() - 0.5) * 0.8; // Around head height ±40cm
+      
+      target.position.set(
+        Math.sin(horizontalAngle) * distance,
+        verticalPosition,
+        -Math.cos(horizontalAngle) * distance
+      );
+      
+      // Add metadata for scoring
+      target.userData = {
+        spawnTime: Date.now(),
+        value: 10,
+        hit: false,
+        lifetime: 2000 + Math.random() * 1000 // How long it stays visible (2-3 seconds)
+      };
+      
+      // Add simple animation
+      target.scale.set(0.2, 0.2, 0.2);
+      animateTargetIn(target);
+      
+      // Add the target to the scene and our list
+      appState.scene.add(target);
+      appState.punchTargets.push(target);
+      
+      // Schedule the target removal
+      setTimeout(() => {
+        if (target.parent && !target.userData.hit) {
+          // If it wasn't hit, it disappears
+          animateTargetOut(target);
+          // Reset combo if player missed
+          if (appState.combo > 0) {
+            appState.combo = 0;
+            updateComboDisplay();
+          }
+        }
+      }, target.userData.lifetime);
+    }
+
+    function animateTargetIn(target) {
+      // Simple scale-up animation
+      const startScale = 0.2;
+      const endScale = 1.0;
+      const duration = 300; // ms
+      const startTime = Date.now();
+      
+      function animate() {
+        const elapsed = Date.now() - startTime;
+        if (elapsed < duration) {
+          const progress = elapsed / duration;
+          const scale = startScale + (endScale - startScale) * progress;
+          target.scale.set(scale, scale, scale);
+          requestAnimationFrame(animate);
+        } else {
+          target.scale.set(endScale, endScale, endScale);
+        }
+      }
+      
+      animate();
+    }
+
+    function animateTargetOut(target) {
+      // Simple fade-out animation
+      const duration = 300; // ms
+      const startTime = Date.now();
+      const startOpacity = target.material.opacity;
+      
+      function animate() {
+        const elapsed = Date.now() - startTime;
+        if (elapsed < duration) {
+          const progress = elapsed / duration;
+          target.material.opacity = startOpacity * (1 - progress);
+          target.scale.set(1 - progress * 0.5, 1 - progress * 0.5, 1 - progress * 0.5);
+          requestAnimationFrame(animate);
+        } else {
+          removeTarget(target);
+        }
+      }
+      
+      animate();
+    }
+
+    function removeTarget(target) {
+      // Remove the target from the scene and our list
+      appState.scene.remove(target);
+      const index = appState.punchTargets.indexOf(target);
+      if (index !== -1) {
+        appState.punchTargets.splice(index, 1);
+      }
+    }
+
+    function updateScoreDisplay() {
+      if (appState.scoreElement) {
+        appState.scoreElement.textContent = `Score: ${appState.score}`;
+      }
+    }
+
+    function updateComboDisplay() {
+      if (appState.comboElement) {
+        appState.comboElement.textContent = `Combo: ${appState.combo}`;
+        
+        // Apply color based on combo count
+        if (appState.combo >= 10) {
+          appState.comboElement.style.color = '#ff0000'; // Red for high combo
+        } else if (appState.combo >= 5) {
+          appState.comboElement.style.color = '#ffaa00'; // Orange for medium combo
+        } else {
+          appState.comboElement.style.color = 'white'; // White for low/no combo
+        }
+      }
+    }
+
+    function updateTimer() {
+      if (!appState.gameActive) return;
+      
+      const currentTime = Date.now();
+      const elapsedTime = currentTime - appState.gameStartTime;
+      const remainingTime = Math.max(0, appState.gameLength - elapsedTime);
+      
+      // Format time as mm:ss
+      const minutes = Math.floor(remainingTime / 60000);
+      const seconds = Math.floor((remainingTime % 60000) / 1000);
+      const formattedTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+      
+      if (appState.timerElement) {
+        appState.timerElement.textContent = formattedTime;
+        
+        // Change color when time is running low
+        if (remainingTime < 30000) { // Less than 30 seconds
+          appState.timerElement.style.color = '#ff3333';
+        }
+      }
+      
+      // Check if game should end
+      if (remainingTime <= 0) {
+        endGame();
       } else {
-        // Using controllers
-        const controllerModel = createControllerModel(inputSource.handedness);
-        controller.add(controllerModel);
-      }
-      
-      appState.scene.add(controller);
-      appState.controllers[inputSource.handedness] = controller;
-    }
-    
-    // Handle removed input sources
-    for (let inputSource of event.removed) {
-      const controller = appState.controllers[inputSource.handedness];
-      if (controller) {
-        appState.scene.remove(controller);
-        appState.controllers[inputSource.handedness] = null;
+        // Schedule next update
+        setTimeout(updateTimer, 1000);
       }
     }
-  });
-}
 
-function createHandModel(handedness) {
-  // Create a simple boxing glove mesh
-  const geometry = new THREE.BoxGeometry(0.08, 0.15, 0.08);
-  const material = new THREE.MeshLambertMaterial({ 
-    color: handedness === 'left' ? 0x3333ff : 0xff3333,
-    transparent: true,
-    opacity: 0.8
-  });
-  
-  const glove = new THREE.Mesh(geometry, material);
-  glove.position.set(0, 0, -0.05);
-  
-  // Add a small sphere for collision detection
-  const colliderGeometry = new THREE.SphereGeometry(0.05, 8, 8);
-  const colliderMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffff00,
-    transparent: true,
-    opacity: 0.0  // Make it invisible
-  });
-  
-  const collider = new THREE.Mesh(colliderGeometry, colliderMaterial);
-  collider.position.set(0, 0, -0.1);
-  glove.add(collider);
-  
-  return glove;
-}
-
-function createControllerModel(handedness) {
-  // Create a simple controller model (similar to the hand model)
-  return createHandModel(handedness);
-}
-
-function startGame() {
-  // Start the game
-  appState.gameActive = true;
-  appState.gameStartTime = Date.now();
-  appState.score = 0;
-  appState.combo = 0;
-  
-  // Set difficulty
-  setDifficulty(appState.difficulty);
-  
-  // Start spawning targets
-  scheduleNextTarget();
-  
-  // Start the countdown timer
-  updateTimer();
-}
-
-function setDifficulty(level) {
-  switch(level) {
-    case 'easy':
-      appState.targetSpawnRate = 3000;
-      break;
-    case 'medium':
-      appState.targetSpawnRate = 2000;
-      break;
-    case 'hard':
-      appState.targetSpawnRate = 1000;
-      break;
-    default:
-      appState.targetSpawnRate = 2000;
-  }
-}
-
-function scheduleNextTarget() {
-  if (!appState.gameActive) return;
-  
-  setTimeout(() => {
-    spawnTarget();
-    scheduleNextTarget();
-  }, appState.targetSpawnRate * (0.8 + Math.random() * 0.4)); // Add some randomness
-}
-
-function spawnTarget() {
-  if (!appState.gameActive) return;
-  
-  // Create a target (punchable object)
-  const geometry = new THREE.SphereGeometry(0.15, 32, 32);
-  const material = new THREE.MeshLambertMaterial({ 
-    color: 0x00ff00,
-    transparent: true,
-    opacity: 0.8
-  });
-  
-  const target = new THREE.Mesh(geometry, material);
-  
-  // Position the target in the player's area
-  // We'll place it randomly in front of the player
-  const distance = 0.7 + Math.random() * 0.6; // 0.7m to 1.3m away
-  const horizontalAngle = (Math.random() - 0.5) * Math.PI * 0.8; // -40 to 40 degrees
-  const verticalPosition = 1.2 + (Math.random() - 0.5) * 0.8; // Around head height ±40cm
-  
-  target.position.set(
-    Math.sin(horizontalAngle) * distance,
-    verticalPosition,
-    -Math.cos(horizontalAngle) * distance
-  );
-  
-  // Add metadata for scoring
-  target.userData = {
-    spawnTime: Date.now(),
-    value: 10,
-    hit: false,
-    lifetime: 2000 + Math.random() * 1000 // How long it stays visible (2-3 seconds)
-  };
-  
-  // Add simple animation
-  target.scale.set(0.2, 0.2, 0.2);
-  animateTargetIn(target);
-  
-  // Add the target to the scene and our list
-  appState.scene.add(target);
-  appState.punchTargets.push(target);
-  
-  // Schedule the target removal
-  setTimeout(() => {
-    if (target.parent && !target.userData.hit) {
-      // If it wasn't hit, it disappears
-      animateTargetOut(target);
-      // Reset combo if player missed
-      if (appState.combo > 0) {
-        appState.combo = 0;
-        updateComboDisplay();
+    function checkCollisions() {
+      // Skip if no controllers
+      if (!appState.controllers.left && !appState.controllers.right) return;
+      
+      // Get positions of hand controllers
+      const hands = {
+        left: appState.handModels.left ? getHandPosition('left') : null,
+        right: appState.handModels.right ? getHandPosition('right') : null
+      };
+      
+      // Check each target for collision with either hand
+      for (const target of appState.punchTargets) {
+        if (target.userData.hit) continue; // Skip if already hit
+        
+        const targetPos = target.position.clone();
+        const targetRadius = 0.15; // Match the sphere size
+        
+        // Check collision with each hand
+        for (const hand of ['left', 'right']) {
+          if (!hands[hand]) continue;
+          
+          const handPos = hands[hand];
+          const distance = targetPos.distanceTo(handPos);
+          
+          if (distance < targetRadius + 0.05) { // 0.05 is the hand collider radius
+            hitTarget(target, hand);
+            break;
+          }
+        }
       }
     }
-  }, target.userData.lifetime);
-}
 
-function animateTargetIn(target) {
-  // Simple scale-up animation
-  const startScale = 0.2;
-  const endScale = 1.0;
-  const duration = 300; // ms
-  const startTime = Date.now();
-  
-  function animate() {
-    const elapsed = Date.now() - startTime;
-    if (elapsed < duration) {
-      const progress = elapsed / duration;
-      const scale = startScale + (endScale - startScale) * progress;
-      target.scale.set(scale, scale, scale);
-      requestAnimationFrame(animate);
-    } else {
-      target.scale.set(endScale, endScale, endScale);
-    }
-  }
-  
-  animate();
-}
-
-function animateTargetOut(target) {
-  // Simple fade-out animation
-  const duration = 300; // ms
-  const startTime = Date.now();
-  const startOpacity = target.material.opacity;
-  
-  function animate() {
-    const elapsed = Date.now() - startTime;
-    if (elapsed < duration) {
-      const progress = elapsed / duration;
-      target.material.opacity = startOpacity * (1 - progress);
-      target.scale.set(1 - progress * 0.5, 1 - progress * 0.5, 1 - progress * 0.5);
-      requestAnimationFrame(animate);
-    } else {
-      removeTarget(target);
-    }
-  }
-  
-  animate();
-}
-
-function removeTarget(target) {
-  // Remove the target from the scene and our list
-  appState.scene.remove(target);
-  const index = appState.punchTargets.indexOf(target);
-  if (index !== -1) {
-    appState.punchTargets.splice(index, 1);
-  }
-}
-
-function updateScoreDisplay() {
-  if (appState.scoreElement) {
-    appState.scoreElement.textContent = `Score: ${appState.score}`;
-  }
-}
-
-function updateComboDisplay() {
-  if (appState.comboElement) {
-    appState.comboElement.textContent = `Combo: ${appState.combo}`;
-    
-    // Apply color based on combo count
-    if (appState.combo >= 10) {
-      appState.comboElement.style.color = '#ff0000'; // Red for high combo
-    } else if (appState.combo >= 5) {
-      appState.comboElement.style.color = '#ffaa00'; // Orange for medium combo
-    } else {
-      appState.comboElement.style.color = 'white'; // White for low/no combo
-    }
-  }
-}
-
-function updateTimer() {
-  if (!appState.gameActive) return;
-  
-  const currentTime = Date.now();
-  const elapsedTime = currentTime - appState.gameStartTime;
-  const remainingTime = Math.max(0, appState.gameLength - elapsedTime);
-  
-  // Format time as mm:ss
-  const minutes = Math.floor(remainingTime / 60000);
-  const seconds = Math.floor((remainingTime % 60000) / 1000);
-  const formattedTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  
-  if (appState.timerElement) {
-    appState.timerElement.textContent = formattedTime;
-    
-    // Change color when time is running low
-    if (remainingTime < 30000) { // Less than 30 seconds
-      appState.timerElement.style.color = '#ff3333';
-    }
-  }
-  
-  // Check if game should end
-  if (remainingTime <= 0) {
-    endGame();
-  } else {
-    // Schedule next update
-    setTimeout(updateTimer, 1000);
-  }
-}
-
-function checkCollisions() {
-  // Skip if no controllers
-  if (!appState.controllers.left && !appState.controllers.right) return;
-  
-  // Get positions of hand controllers
-  const hands = {
-    left: appState.handModels.left ? getHandPosition('left') : null,
-    right: appState.handModels.right ? getHandPosition('right') : null
-  };
-  
-  // Check each target for collision with either hand
-  for (const target of appState.punchTargets) {
-    if (target.userData.hit) continue; // Skip if already hit
-    
-    const targetPos = target.position.clone();
-    const targetRadius = 0.15; // Match the sphere size
-    
-    // Check collision with each hand
-    for (const hand of ['left', 'right']) {
-      if (!hands[hand]) continue;
+    function getHandPosition(handedness) {
+      const controller = appState.controllers[handedness];
+      if (!controller) return null;
       
-      const handPos = hands[hand];
-      const distance = targetPos.distanceTo(handPos);
+      // Get world position of the controller/hand
+      const position = new THREE.Vector3();
+      controller.getWorldPosition(position);
       
-      if (distance < targetRadius + 0.05) { // 0.05 is the hand collider radius
-        hitTarget(target, hand);
-        break;
+      return position;
+    }
+
+    function hitTarget(target, handedness) {
+      // Mark as hit
+      target.userData.hit = true;
+      
+      // Play punch sound
+      if (appState.punchSound) {
+        appState.punchSound.play();
+      }
+      
+      // Calculate score based on reaction time
+      const reactionTime = Date.now() - target.userData.spawnTime;
+      let points = target.userData.value;
+      
+      // Faster hits get more points
+      if (reactionTime < 500) {
+        points *= 2; // Double points for very fast hits
+      } else if (reactionTime < 1000) {
+        points *= 1.5; // 50% bonus for fast hits
+      }
+      
+      // Increase combo
+      appState.combo++;
+      
+      // Combo multiplier
+      if (appState.combo >= 5) {
+        points *= 1 + (Math.min(appState.combo, 20) / 20); // Max 2x at 20+ combo
+        
+        // Play combo sound for milestone combos
+        if (appState.combo % 5 === 0 && appState.comboSound) {
+          appState.comboSound.play();
+        }
+      }
+      
+      // Add points to score
+      appState.score += Math.round(points);
+      
+      // Update displays
+      updateScoreDisplay();
+      updateComboDisplay();
+      
+      // Change color to red
+      target.material.color.set(0xff0000);
+      
+      // Animate the hit
+      animateHit(target, handedness);
+    }
+
+    function animateHit(target, handedness) {
+      // Get the direction vector from the hand
+      const direction = new THREE.Vector3();
+      const hand = appState.controllers[handedness];
+      
+      if (hand) {
+        // Calculate punch direction
+        direction.copy(target.position).sub(getHandPosition(handedness)).normalize();
+        
+        // Add a bit of randomness
+        direction.x += (Math.random() - 0.5) * 0.2;
+        direction.y += (Math.random() - 0.5) * 0.2;
+        direction.z += (Math.random() - 0.5) * 0.2;
+        
+        // Scale by punch force
+        direction.multiplyScalar(0.05 + Math.random() * 0.1);
+      }
+      
+      // Simple animation for the hit
+      const duration = 300; // ms
+      const startTime = Date.now();
+      const startScale = target.scale.x;
+      const endScale = 0.1;
+      const startPos = target.position.clone();
+      
+      function animate() {
+        const elapsed = Date.now() - startTime;
+        if (elapsed < duration) {
+          const progress = elapsed / duration;
+          
+          // Scale down
+          const scale = startScale * (1 - progress);
+          target.scale.set(scale, scale, scale);
+          
+          // Move in punch direction
+          target.position.copy(startPos).add(direction.clone().multiplyScalar(progress * 10));
+          
+          // Reduce opacity
+          target.material.opacity = 0.8 * (1 - progress);
+          
+          requestAnimationFrame(animate);
+        } else {
+          removeTarget(target);
+        }
+      }
+      
+      animate();
+    }
+
+    function endGame() {
+      appState.gameActive = false;
+      
+      // Show game over screen
+      showGameOverScreen();
+      
+      // Remove all remaining targets
+      while (appState.punchTargets.length > 0) {
+        removeTarget(appState.punchTargets[0]);
       }
     }
-  }
-}
 
-function getHandPosition(handedness) {
-  const controller = appState.controllers[handedness];
-  if (!controller) return null;
-  
-  // Get world position of the controller/hand
-  const position = new THREE.Vector3();
-  controller.getWorldPosition(position);
-  
-  return position;
-}
-
-function hitTarget(target, handedness) {
-  // Mark as hit
-  target.userData.hit = true;
-  
-  // Play punch sound
-  if (appState.punchSound) {
-    appState.punchSound.currentTime = 0;
-    appState.punchSound.play();
-  }
-  
-  // Calculate score based on reaction time
-  const reactionTime = Date.now() - target.userData.spawnTime;
-  let points = target.userData.value;
-  
-  // Faster hits get more points
-  if (reactionTime < 500) {
-    points *= 2; // Double points for very fast hits
-  } else if (reactionTime < 1000) {
-    points *= 1.5; // 50% bonus for fast hits
-  }
-  
-  // Increase combo
-  appState.combo++;
-  
-  // Combo multiplier
-  if (appState.combo >= 5) {
-    points *= 1 + (Math.min(appState.combo, 20) / 20); // Max 2x at 20+ combo
-    
-    // Play combo sound for milestone combos
-    if (appState.combo % 5 === 0 && appState.comboSound) {
-      appState.comboSound.currentTime = 0;
-      appState.comboSound.play();
+    function showGameOverScreen() {
+      // Create game over UI
+      const gameOverDiv = document.createElement('div');
+      gameOverDiv.style.position = 'absolute';
+      gameOverDiv.style.top = '50%';
+      gameOverDiv.style.left = '50%';
+      gameOverDiv.style.transform = 'translate(-50%, -50%)';
+      gameOverDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+      gameOverDiv.style.color = 'white';
+      gameOverDiv.style.padding = '30px';
+      gameOverDiv.style.borderRadius = '15px';
+      gameOverDiv.style.textAlign = 'center';
+      
+      // Add final score
+      const scoreHeader = document.createElement('h1');
+      scoreHeader.textContent = 'Game Over';
+      gameOverDiv.appendChild(scoreHeader);
+      
+      const scoreText = document.createElement('h2');
+      scoreText.textContent = `Final Score: ${appState.score}`;
+      gameOverDiv.appendChild(scoreText);
+      
+      const comboText = document.createElement('p');
+      comboText.textContent = `Max Combo: ${appState.combo}`;
+      gameOverDiv.appendChild(comboText);
+      
+      // Add restart button
+      const restartButton = document.createElement('button');
+      restartButton.textContent = 'Play Again';
+      restartButton.style.padding = '15px 30px';
+      restartButton.style.fontSize = '20px';
+      restartButton.style.backgroundColor = '#ff5555';
+      restartButton.style.color = 'white';
+      restartButton.style.border = 'none';
+      restartButton.style.borderRadius = '8px';
+      restartButton.style.marginTop = '20px';
+      restartButton.style.cursor = 'pointer';
+      
+      restartButton.addEventListener('click', () => {
+        document.body.removeChild(gameOverDiv);
+        startGame();
+      });
+      
+      gameOverDiv.appendChild(restartButton);
+      
+      // Add exit button
+      const exitButton = document.createElement('button');
+      exitButton.textContent = 'Exit Game';
+      exitButton.style.padding = '15px 30px';
+      exitButton.style.fontSize = '20px';
+      exitButton.style.backgroundColor = '#555555';
+      exitButton.style.color = 'white';
+      exitButton.style.border = 'none';
+      exitButton.style.borderRadius = '8px';
+      exitButton.style.marginTop = '20px';
+      exitButton.style.marginLeft = '15px';
+      exitButton.style.cursor = 'pointer';
+      
+      exitButton.addEventListener('click', () => {
+        if (appState.session) {
+          appState.session.end();
+        }
+      });
+      
+      gameOverDiv.appendChild(exitButton);
+      
+      // Add to body
+      document.body.appendChild(gameOverDiv);
     }
-  }
-  
-  // Add points to score
-  appState.score += Math.round(points);
-  
-  // Update displays
-  updateScoreDisplay();
-  updateComboDisplay();
-  
-  // Change color to red
-  target.material.color.set(0xff0000);
-  
-  // Animate the hit
-  animateHit(target, handedness);
-}
 
-function animateHit(target, handedness) {
-  // Get the direction vector from the hand
-  const direction = new THREE.Vector3();
-  const hand = appState.controllers[handedness];
-  
-  if (hand) {
-    // Calculate punch direction
-    direction.copy(target.position).sub(getHandPosition(handedness)).normalize();
-    
-    // Add a bit of randomness
-    direction.x += (Math.random() - 0.5) * 0.2;
-    direction.y += (Math.random() - 0.5) * 0.2;
-    direction.z += (Math.random() - 0.5) * 0.2;
-    
-    // Scale by punch force
-    direction.multiplyScalar(0.05 + Math.random() * 0.1);
-  }
-  
-  // Simple animation for the hit
-  const duration = 300; // ms
-  const startTime = Date.now();
-  const startScale = target.scale.x;
-  const endScale = 0.1;
-  const startPos = target.position.clone();
-  
-  function animate() {
-    const elapsed = Date.now() - startTime;
-    if (elapsed < duration) {
-      const progress = elapsed / duration;
+    function onSessionEnded() {
+      appState.gameActive = false;
       
-      // Scale down
-      const scale = startScale * (1 - progress);
-      target.scale.set(scale, scale, scale);
+      // Hide game UI elements
+      if (appState.scoreElement) appState.scoreElement.style.display = 'none';
+      if (appState.comboElement) appState.comboElement.style.display = 'none';
+      if (appState.timerElement) appState.timerElement.style.display = 'none';
       
-      // Move in punch direction
-      target.position.copy(startPos).add(direction.clone().multiplyScalar(progress * 10));
+      // Show the start button again
+      startButton.style.display = 'block';
+      infoElement.style.display = 'block';
       
-      // Reduce opacity
-      target.material.opacity = 0.8 * (1 - progress);
-      
-      requestAnimationFrame(animate);
-    } else {
-      removeTarget(target);
+      // Remove any game over screen if present
+      const gameOverDiv = document.querySelector('div[style*="translate(-50%, -50%)"][style*="background-color: rgba(0, 0, 0, 0.8)"]');
+      if (gameOverDiv) document.body.removeChild(gameOverDiv);
     }
-  }
-  
-  animate();
-}
 
-function endGame() {
-  appState.gameActive = false;
-  
-  // Show game over screen
-  showGameOverScreen();
-  
-  // Remove all remaining targets
-  while (appState.punchTargets.length > 0) {
-    removeTarget(appState.punchTargets[0]);
-  }
-}
-
-function showGameOverScreen() {
-  // Create game over UI
-  const gameOverDiv = document.createElement('div');
-  gameOverDiv.style.position = 'absolute';
-  gameOverDiv.style.top = '50%';
-  gameOverDiv.style.left = '50%';
-  gameOverDiv.style.transform = 'translate(-50%, -50%)';
-  gameOverDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-  gameOverDiv.style.color = 'white';
-  gameOverDiv.style.padding = '30px';
-  gameOverDiv.style.borderRadius = '15px';
-  gameOverDiv.style.textAlign = 'center';
-  
-  // Add final score
-  const scoreHeader = document.createElement('h1');
-  scoreHeader.textContent = 'Game Over';
-  gameOverDiv.appendChild(scoreHeader);
-  
-  const scoreText = document.createElement('h2');
-  scoreText.textContent = `Final Score: ${appState.score}`;
-  gameOverDiv.appendChild(scoreText);
-  
-  const comboText = document.createElement('p');
-  comboText.textContent = `Max Combo: ${appState.combo}`;
-  gameOverDiv.appendChild(comboText);
-  
-  // Add restart button
-  const restartButton = document.createElement('button');
-  restartButton.textContent = 'Play Again';
-  restartButton.style.padding = '15px 30px';
-  restartButton.style.fontSize = '20px';
-  restartButton.style.backgroundColor = '#ff5555';
-  restartButton.style.color = 'white';
-  restartButton.style.border = 'none';
-  restartButton.style.borderRadius = '8px';
-  restartButton.style.marginTop = '20px';
-  restartButton.style.cursor = 'pointer';
-  
-  restartButton.addEventListener('click', () => {
-    document.body.removeChild(gameOverDiv);
-    startGame();
-  });
-  
-  gameOverDiv.appendChild(restartButton);
-  
-  // Add exit button
-  const exitButton = document.createElement('button');
-  exitButton.textContent = 'Exit Game';
-  exitButton.style.padding = '15px 30px';
-  exitButton.style.fontSize = '20px';
-  exitButton.style.backgroundColor = '#555555';
-  exitButton.style.color = 'white';
-  exitButton.style.border = 'none';
-  exitButton.style.borderRadius = '8px';
-  exitButton.style.marginTop = '20px';
-  exitButton.style.marginLeft = '15px';
-  exitButton.style.cursor = 'pointer';
-  
-  exitButton.addEventListener('click', () => {
-    if (appState.session) {
-      appState.session.end();
+    function onXRFrame(time, frame) {
+      // Continue the animation loop
+      appState.session.requestAnimationFrame(onXRFrame);
+      
+      // Get the pose of the device
+      const pose = frame.getViewerPose(appState.referenceSpace);
+      if (!pose) return;
+      
+      // Update the scene for each view
+      for (const view of pose.views) {
+        const viewport = appState.session.renderState.baseLayer.getViewport(view);
+        appState.renderer.setViewport(viewport.x, viewport.y, viewport.width, viewport.height);
+        appState.camera.projectionMatrix.fromArray(view.projectionMatrix);
+        appState.camera.matrix.fromArray(view.transform.matrix);
+        appState.camera.matrix.decompose(appState.camera.position, appState.camera.quaternion, appState.camera.scale);
+      }
+      
+      // Render the scene
+      appState.renderer.render(appState.scene, appState.camera);
+      
+      // Check for collisions
+      if (appState.gameActive) {
+        checkCollisions();
+      }
     }
-  });
-  
-  gameOverDiv.appendChild(exitButton);
-  
-  // Add to body
-  document.body.appendChild(gameOverDiv);
-}
-
-function onSessionEnded() {
-  appState.gameActive = false;
-  
-  // Show the start button again
-  document.querySelector('button').style.display = 'block';
-  
-  // Remove game UI elements
-  if (appState.scoreElement) document.body.removeChild(appState.scoreElement);
-  if (appState.comboElement) document.body.removeChild(appState.comboElement);
-  if (appState.timerElement) document.body.removeChild(appState.timerElement);
-  
-  // Remove any game over screen if present
-  const gameOverDiv = document.querySelector('div[style*="translate(-50%, -50%)"]');
-  if (gameOverDiv) document.body.removeChild(gameOverDiv);
-}
-
-function onXRFrame(time, frame) {
-  // Continue the animation loop
-  appState.session.requestAnimationFrame(onXRFrame);
-  
-  // Get the pose of the device
-  const pose = frame.getViewerPose(appState.referenceSpace);
-  if (!pose) return;
-  
-  // Update the camera with the new pose
-  const views = pose.views;
-  appState.renderer.render(appState.scene, appState.camera);
-  
-  // Check for collisions
-  if (appState.gameActive) {
-    checkCollisions();
-  }
-}
+  </script>
+</body>
+</html>

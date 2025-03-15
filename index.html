@@ -61,6 +61,27 @@
       const loader = new GLTFLoader();
       loader.load('boxer.glb', (gltf) => {
         model = gltf.scene;
+
+        // Add a directional light
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1); // Color, intensity
+        directionalLight.position.set(1, 1, 1); // Set the direction of the light
+        scene.add(directionalLight);
+
+        // Ensure the model receives shadows and is visible
+        model.traverse((node) => {
+            if (node.isMesh) {
+                node.material.side = THREE.DoubleSide; // Ensure both sides are rendered
+                node.material = new THREE.MeshStandardMaterial({
+                    map: node.material.map, // Keep existing texture if any
+                    color: node.material.color || new THREE.Color(0xffffff), // Default white color
+                    metalness: 0.5, // Adjust as needed
+                    roughness: 0.5  // Adjust as needed
+                });
+                node.castShadow = true;
+                node.receiveShadow = true;
+            }
+        });
+
         model.visible = false;
         scene.add(model);
 

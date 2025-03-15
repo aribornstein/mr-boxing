@@ -81,13 +81,17 @@
         }
       };
       
-      document.getElementById('ar-button').addEventListener('click', () => {
-        navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['plane-detection'] })
-          .then(session => {
-            renderer.xr.setReferenceSpaceType('local');
-            renderer.xr.setSession(session);
-          })
-          .catch(err => console.error("Failed to start AR session", err));
+      document.getElementById('ar-button').addEventListener('click', async () => {
+        try {
+          const session = await navigator.xr.requestSession('immersive-ar', {
+            requiredFeatures: ['local-floor', 'hit-test', 'plane-detection', 'anchors'],
+            optionalFeatures: ['mesh-detection'],
+          });
+          renderer.xr.setReferenceSpaceType('local-floor');
+          renderer.xr.setSession(session);
+        } catch (err) {
+          console.error("Failed to start AR session", err);
+        }
       });
       
       const clock = new THREE.Clock();

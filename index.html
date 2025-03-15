@@ -40,16 +40,22 @@
       
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.0;
       renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(window.devicePixelRatio); // Add this line
       renderer.xr.enabled = true;
+      renderer.setClearColor(0x000000, 0); // Set clear color to transparent black
       document.body.appendChild(renderer.domElement);
       
       const scene = new THREE.Scene();
+      scene.background = null; // Set the scene background to null for passthrough
       const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 1000);
       scene.add(camera);
       
       const ratk = new RealityAccelerator(renderer.xr, { environmentRendering: true });
       scene.add(ratk.root);
+      ratk.root.visible = false;
       
       let model, mixer;
       const loader = new GLTFLoader();

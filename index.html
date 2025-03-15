@@ -47,7 +47,7 @@
       const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 1000);
       scene.add(camera);
       
-      const ratk = new RealityAccelerator(renderer.xr);
+      const ratk = new RealityAccelerator(renderer.xr, { environmentRendering: true });
       scene.add(ratk.root);
       
       let model;
@@ -62,7 +62,7 @@
         if (model) {
           model.visible = true;
           model.position.set(floor.position.x, floor.position.y, floor.position.z);
-          model.scale.set(1, 1, 1);
+          model.scale.set(100, 100, 100);
         }
       }
       

@@ -46,7 +46,7 @@
       renderer.setPixelRatio(window.devicePixelRatio);
       renderer.xr.enabled = true;
       renderer.setClearColor(0x000000, 0);
-      renderer.shadowMap.enabled = true; // Enable shadows
+      renderer.shadowMap.enabled = true;
       document.body.appendChild(renderer.domElement);
       
       const scene = new THREE.Scene();
@@ -59,25 +59,31 @@
       ratk.root.visible = false;
 
       // Add ambient light to brighten the model
-      const ambientLight = new THREE.AmbientLight(0xffffff, 1.5); // Adjust intensity as needed
+      const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
       scene.add(ambientLight);
 
       // Add a directional light that follows the player
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2); 
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
       directionalLight.position.set(1, 1, 1);
-      directionalLight.castShadow = true; 
+      directionalLight.castShadow = true;
       scene.add(directionalLight);
 
-      let model, mixer;
+      let model, mixer, modelParent;
       const loader = new GLTFLoader();
       loader.load('boxer.glb', (gltf) => {
         model = gltf.scene;
 
+        // Create a parent object and add the model to it
+        modelParent = new THREE.Object3D();
+        modelParent.add(model);
+        scene.add(modelParent);
+
+        // Ensure the model receives shadows and is visible
         model.traverse((node) => {
           if (node.isMesh) {
             node.material.side = THREE.DoubleSide;
             node.material = new THREE.MeshStandardMaterial({
-              map: node.material.map, 
+              map: node.material.map,
               color: node.material.color || new THREE.Color(0xffffff),
               metalness: 0.5,
               roughness: 0.5
@@ -87,8 +93,7 @@
           }
         });
 
-        model.visible = false;
-        scene.add(model);
+        modelParent.visible = false;
 
         mixer = new THREE.AnimationMixer(model);
         const jabCrossClip = gltf.animations.find(clip => clip.name === 'Jab Cross');
@@ -100,10 +105,10 @@
       });
 
       function placeModelOnFloor(floor) {
-        if (model) {
-          model.visible = true;
-          model.position.set(floor.position.x, floor.position.y, floor.position.z);
-          model.scale.set(250, 250, 250);
+        if (modelParent) {
+          modelParent.visible = true;
+          modelParent.position.set(floor.position.x, floor.position.y, floor.position.z);
+          modelParent.scale.set(250, 250, 250);
         }
       }
 
@@ -133,26 +138,28 @@
 
         ratk.update();
 
-        if (model && model.visible) {
-            // Get the position of the camera (player)
-            const playerPosition = new THREE.Vector3();
-            camera.getWorldPosition(playerPosition);
+        // Ensure the parent object faces the player
+        if (modelParent && modelParent.visible) {
+          const playerPosition = new THREE.Vector3();
+          camera.getWorldPosition(playerPosition);
 
-            // Calculate the direction vector from the model to the player
-            const direction = new THREE.Vector3();
-            direction.subVectors(playerPosition, model.position);
+          // Compute direction vector from model to player (ignore Y-axis)
+          const direction = new THREE.Vector3(
+            playerPosition.x - modelParent.position.x,
+            0, // Ignore vertical movement
+            playerPosition.z - modelParent.position.z
+          ).normalize();
 
-            // Compute the angle required to rotate the model to face the player
-            const angle = Math.atan2(direction.x, direction.z);
+          // Compute the new Y-axis rotation angle
+          const angle = Math.atan2(direction.x, direction.z);
 
-            // Set the model's rotation around the Y-axis
-            model.rotation.set(0, angle, 0);
+          // Apply the computed Y-rotation to the parent object
+          modelParent.rotation.set(0, angle, 0);
         }
 
-
         // Update light position to follow the camera
-        directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2)); 
-        directionalLight.lookAt(model ? model.position : scene.position);
+        directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2));
+        directionalLight.lookAt(modelParent ? modelParent.position : scene.position);
 
         renderer.render(scene, camera);
       }

@@ -144,7 +144,7 @@
               // Hide the visual mesh
               node.visible = false;
               // Create a fixed (static) rigid body for the hitbox
-              const bodyDesc = RAPIER.RigidBodyDesc.fixed();
+              const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
               const body = physicsWorld.createRigidBody(bodyDesc);
               // Compute bounding box for the hitbox mesh
               node.geometry.computeBoundingBox();
@@ -247,7 +247,7 @@
               // Assume you stored the rigid body reference alongside, e.g., hitboxPhysics[node.uuid].body
               const { body } = hitboxPhysics[node.name];
               // Update the fixed body's transform (you may need to convert Three.js vector to Rapier's vector)
-              body.setTranslation({ x: worldPos.x, y: worldPos.y, z: worldPos.z }, true);
+              body.setNextKinematicTranslation({ x: worldPos.x, y: worldPos.y, z: worldPos.z }, true);
             }
           });
         }

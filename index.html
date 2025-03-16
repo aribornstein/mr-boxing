@@ -88,6 +88,26 @@
     directionalLight.castShadow = true;
     scene.add(directionalLight);
 
+   // load boxin gloves for controllers
+   let handModels = {};
+    const handLoader = new GLTFLoader();
+    const controller1 = renderer.xr.getController(0);
+    const controller2 = renderer.xr.getController(1);
+    scene.add(controller1, controller2);
+
+    function loadHandModel(controller, side, modelPath) {
+      handLoader.load(modelPath, (gltf) => {
+        const handModel = gltf.scene;
+        handModel.scale.set(0.1, 0.1, 0.1);
+        controller.add(handModel);
+        handModels[side] = handModel;
+      });
+    }
+
+    loadHandModel(controller1, 'left', 'left_glove.glb');
+    loadHandModel(controller2, 'right', 'right_glove.glb');
+
+    // load the boxer
     let model, mixer, modelParent;
     const loader = new GLTFLoader();
     loader.load('boxer.glb', (gltf) => {

@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -11,12 +10,10 @@
       overflow: hidden;
       background: none;
     }
-
     canvas {
       display: block;
       background: none;
     }
-
     #ar-button {
       position: absolute;
       bottom: 20px;
@@ -36,7 +33,6 @@
     }
   </script>
 </head>
-
 <body>
   <button id="ar-button">Enter AR</button>
 
@@ -99,7 +95,7 @@
 
       // Store mappings for glove and hitbox colliders
       const glovePhysics = {}; // side: { body, collider }
-      const hitboxPhysics = {}; // collider.handle: hitbox name
+      const hitboxPhysics = {}; // keyed by hitbox name
 
       // Add the debugger
       const debuggerInstance = new Debugger(physicsWorld);
@@ -147,20 +143,23 @@
             if (node.name.startsWith('Hit')) {
               // Hide the visual mesh
               node.visible = false;
-              // Create a fixed (static) rigid body for the hitbox
-              const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
+              // *** FIX APPLIED: Create a dynamic rigid body for hitboxes ***
+              const bodyDesc = RAPIER.RigidBodyDesc.dynamic();
               const body = physicsWorld.createRigidBody(bodyDesc);
               // Compute bounding box for the hitbox mesh
               node.geometry.computeBoundingBox();
               const bbox = node.geometry.boundingBox;
               const size = new THREE.Vector3();
               bbox.getSize(size);
-              // Rapier expects half-extents
-              const hx = size.x / 2 * 0.1; // Reduced to 10
-              const hy = size.y / 2 * 0.1; // Reduced by 10%
-              const hz = size.z / 2 * 0.1; // Reduced by 10%
+              // Rapier expects half-extents; adjust as needed.
+              const hx = (size.x / 2) * 0.1;
+              const hy = (size.y / 2) * 0.1;
+              const hz = (size.z / 2) * 0.1;
               // Create a cuboid collider matching the bounding box
-              const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz);
+              const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
+                // (Optionally, you can set the collider as sensor if needed)
+                // .setSensor(true);
+                .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
               // Position the collider at the mesh's center in local space
               const center = new THREE.Vector3();
               bbox.getCenter(center);
@@ -168,7 +167,6 @@
               const collider = physicsWorld.createCollider(colliderDesc, body);
               // Store a mapping from collider handle to hitbox name
               hitboxPhysics[node.name] = { body, collider };
-              // Optionally store a reference on the node for further use if needed.
             } else {
               node.material.side = THREE.DoubleSide;
               node.material = new THREE.MeshStandardMaterial({
@@ -238,25 +236,33 @@
           const controller = side === 'left' ? controller1 : controller2;
           const position = new THREE.Vector3();
           controller.getWorldPosition(position);
-          // Rapier uses its own vector type. Update the kinematic body.
+          // Update the kinematic body.
           body.setNextKinematicTranslation({ x: position.x, y: position.y, z: position.z });
         }
 
+        // Update boxer hitbox positions:
         if (modelParent && modelParent.visible) {
           modelParent.traverse((node) => {
             if (node.isMesh && node.name.startsWith('Hit')) {
-              // Compute the node's world position (and orientation if needed)
+              // Compute the node's world position.
               const worldPos = new THREE.Vector3();
               node.getWorldPosition(worldPos);
-              // Assume you stored the rigid body reference alongside, e.g., hitboxPhysics[node.uuid].body
               const { body } = hitboxPhysics[node.name];
-              // Update the fixed body's transform (you may need to convert Three.js vector to Rapier's vector)
-              body.setNextKinematicTranslation({ x: worldPos.x, y: worldPos.y, z: worldPos.z }, true);
+              // For dynamic bodies, we manually override their transform and zero their velocity.
+              body.setTranslation({ x: worldPos.x, y: worldPos.y, z: worldPos.z }, true);
+              body.setLinvel({ x: 0, y: 0, z: 0 }, true);
             }
           });
         }
 
-        // Ensure the parent object faces the player.
+        // Process collision events.
+        physicsWorld.step(eventQueue);
+        eventQueue.drainCollisionEvents((handle1, handle2, started) => {
+          console.log("Collision Event:", { handle1, handle2, started });
+          // (You can add logic here to respond to collisions.)
+        });
+
+        // Ensure the boxer faces the player.
         if (modelParent && modelParent.visible) {
           const playerPosition = new THREE.Vector3();
           if (renderer.xr.isPresenting && frame) {
@@ -278,31 +284,13 @@
           modelParent.rotation.set(0, angle, 0);
         }
 
-        // Step the physics simulation.
-        physicsWorld.step(eventQueue);
-
-        // Process collision events. The callback receives collider handles and a boolean flag (started).
-        eventQueue.drainCollisionEvents((handle1, handle2, started) => {
-          console.log("Collision Event:", { handle1, handle2, started }); // Log every collision 
-          if (started) {
-            // Check if one collider belongs to a glove and the other to a hitbox.
-            const gloveHit = Object.values(glovePhysics).find(g =>
-              g.collider.handle === handle1 || g.collider.handle === handle2);
-            const hitboxName = Object.values(hitboxPhysics).find(g =>
-              g.collider.handle === handle1 || g.collider.handle === handle2);
-            if (gloveHit && hitboxName) {
-              console.log("Collision with hitbox:", hitboxName);
-            }
-          }
-        });
-
         directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2));
         directionalLight.lookAt(modelParent ? modelParent.position : scene.position);
 
         // Update the debugger
-        if (debuggerInstance && debuggerInstance.isEnabled()) { // Add this line
-          debuggerInstance.update(); // Add this line
-        } // Add this line
+        if (debuggerInstance && debuggerInstance.isEnabled()) {
+          debuggerInstance.update();
+        }
 
         renderer.render(scene, camera);
       }
@@ -311,5 +299,4 @@
     });
   </script>
 </body>
-
 </html>

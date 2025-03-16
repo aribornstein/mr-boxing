@@ -155,9 +155,8 @@
               const hx = size.x / 2 * 0.1; // Reduced to 10
               const hy = size.y / 2 * 0.1; // Reduced by 10%
               const hz = size.z / 2 * 0.1; // Reduced by 10%
-              // Create a cuboid collider matching the bounding box and mark it as sensor
-              const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
-                .setSensor(true);
+              // Create a cuboid collider matching the bounding box
+              const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz);
               // Position the collider at the mesh's center in local space
               const center = new THREE.Vector3();
               bbox.getCenter(center);

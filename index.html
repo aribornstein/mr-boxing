@@ -267,10 +267,6 @@
           ).normalize();
           const angle = Math.atan2(direction.x, direction.z);
           modelParent.rotation.set(0, angle, 0);
-
-          console.log("Player World Position:", playerPosition);
-          console.log("Model Position:", modelParent.position);
-          console.log("Computed Angle:", angle);
         }
 
         directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2));

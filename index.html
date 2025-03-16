@@ -164,7 +164,7 @@
               colliderDesc.setTranslation(center.x, center.y, center.z);
               const collider = physicsWorld.createCollider(colliderDesc, body);
               // Store a mapping from collider handle to hitbox name
-              hitboxPhysics[node.uuid] = node.name;
+              hitboxPhysics[node.uuid] = collider.handle;
               // Optionally store a reference on the node for further use if needed.
             } else {
               node.material.side = THREE.DoubleSide;
@@ -246,7 +246,7 @@
               const worldPos = new THREE.Vector3();
               node.getWorldPosition(worldPos);
               // Assume you stored the rigid body reference alongside, e.g., hitboxPhysics[node.uuid].body
-              const body = hitboxPhysics[node.uuid].body;
+              const body = physicsWorld.getCollider(hitboxPhysics[node.uuid]).body;
               // Update the fixed body's transform (you may need to convert Three.js vector to Rapier's vector)
               body.setTranslation({ x: worldPos.x, y: worldPos.y, z: worldPos.z }, true);
             }

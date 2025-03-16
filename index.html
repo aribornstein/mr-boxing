@@ -140,9 +140,7 @@
 
         // Ensure the parent object faces the player
         if (modelParent && modelParent.visible) {
-          const playerPosition = new THREE.Vector3();
-          camera.getWorldPosition(playerPosition);
-
+          const playerPosition = camera.position.clone();
           // Compute direction vector from model to player (ignore Y-axis)
           const direction = new THREE.Vector3(
             playerPosition.x - modelParent.position.x,

@@ -98,8 +98,9 @@
       const hitboxPhysics = {}; // collider.handle: hitbox name
 
       // Add the debugger
-      const debuggerLine = new Debugger(physicsWorld);
-      scene.add(debuggerLine);
+      const debuggerInstance = new Debugger(physicsWorld);
+      debuggerInstance.enable(); // Enable debugger initially
+      scene.add(debuggerInstance);
 
       // -------------------- LOAD HAND MODELS & ADD GLOVE COLLIDERS --------------------
       let handModels = {};
@@ -111,7 +112,7 @@
       function loadHandModel(controller, side, modelPath) {
         handLoader.load(modelPath, (gltf) => {
           const handModel = gltf.scene;
-          handModel.scale.set(0.1, 0.1, 0.1);
+          handModel.scale.set(0.4, 0.4, 0.4);
           controller.add(handModel);
           handModels[side] = handModel;
           // Create a kinematic rigid body for the glove

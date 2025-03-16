@@ -1,23 +1,33 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>GLB Model on Floor</title>
-    <style>
-      body { margin: 0; overflow: hidden; background: none; }
-      canvas { display: block; background: none; }
-      #ar-button {
-        position: absolute;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        padding: 12px 24px;
-        font-size: 16px;
-        z-index: 100;
-      }
-    </style>
-    <script type="importmap">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GLB Model on Floor</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: none;
+    }
+
+    canvas {
+      display: block;
+      background: none;
+    }
+
+    #ar-button {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 24px;
+      font-size: 16px;
+      z-index: 100;
+    }
+  </style>
+  <script type="importmap">
       {
         "imports": {
           "three": "https://unpkg.com/three@0.153.0/build/three.module.js",
@@ -25,71 +35,76 @@
         }
       }
     </script>
-  </head>
-  <body>
-    <button id="ar-button">Enter AR</button>
-    
-    <script type="module">
-      import * as THREE from 'three';
-      import { GLTFLoader } from 'GLTFLoader';
-      import { RealityAccelerator } from 'https://unpkg.com/ratk@0.3.0';
-      
-      if (!navigator.xr) {
-        console.error("WebXR not available on this device/browser.");
+</head>
+
+<body>
+  <button id="ar-button">Enter AR</button>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'GLTFLoader';
+    import { RealityAccelerator } from 'https://unpkg.com/ratk@0.3.0';
+
+    if (!navigator.xr) {
+      console.error("WebXR not available on this device/browser.");
+    }
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.xr.enabled = true;
+    renderer.setClearColor(0x000000, 0);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = null;
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+    scene.add(camera);
+
+    // Resize handler
+    window.addEventListener("resize", () => {
+      if (!renderer.xr.getSession()) {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
       }
-      
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.outputColorSpace = THREE.SRGBColorSpace;
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.0;
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(window.devicePixelRatio);
-      renderer.xr.enabled = true;
-      renderer.setClearColor(0x000000, 0);
-      renderer.shadowMap.enabled = true;
-      document.body.appendChild(renderer.domElement);
-      
-      const scene = new THREE.Scene();
-      scene.background = null;
-      const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-      scene.add(camera);
-      
-      // Resize handler
-      window.addEventListener("resize", () => {
-        if (!renderer.xr.getSession()) {
-          camera.aspect = window.innerWidth / window.innerHeight;
-          camera.updateProjectionMatrix();
-          renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-      });
-      
-      const ratk = new RealityAccelerator(renderer.xr, { environmentRendering: true });
-      scene.add(ratk.root);
-      ratk.root.visible = false;
+    });
 
-      // Add ambient light to brighten the model
-      const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
-      scene.add(ambientLight);
+    const ratk = new RealityAccelerator(renderer.xr, { environmentRendering: true });
+    scene.add(ratk.root);
+    ratk.root.visible = false;
 
-      // Add a directional light that follows the player
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
-      directionalLight.position.set(1, 1, 1);
-      directionalLight.castShadow = true;
-      scene.add(directionalLight);
+    // Add ambient light to brighten the model
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+    scene.add(ambientLight);
 
-      let model, mixer, modelParent;
-      const loader = new GLTFLoader();
-      loader.load('boxer.glb', (gltf) => {
-        model = gltf.scene;
+    // Add a directional light that follows the player
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    directionalLight.position.set(1, 1, 1);
+    directionalLight.castShadow = true;
+    scene.add(directionalLight);
 
-        // Create a parent object and add the model to it
-        modelParent = new THREE.Object3D();
-        modelParent.add(model);
-        scene.add(modelParent);
+    let model, mixer, modelParent;
+    const loader = new GLTFLoader();
+    loader.load('boxer.glb', (gltf) => {
+      model = gltf.scene;
 
-        // Ensure the model receives shadows and is visible
-        model.traverse((node) => {
-          if (node.isMesh) {
+      // Create a parent object and add the model to it
+      modelParent = new THREE.Object3D();
+      modelParent.add(model);
+      scene.add(modelParent);
+
+      // Ensure the model receives shadows and is visible and that the hitboxes are hidden
+      model.traverse((node) => {
+        if (node.isMesh) {
+          if (node.name.startsWith('Hit')) {
+            node.visible = false;
+          }
+          else {
             node.material.side = THREE.DoubleSide;
             node.material = new THREE.MeshStandardMaterial({
               map: node.material.map,
@@ -100,95 +115,97 @@
             node.castShadow = true;
             node.receiveShadow = true;
           }
+        }
+      });
+
+      modelParent.visible = false;
+
+      mixer = new THREE.AnimationMixer(model);
+      const jabCrossClip = gltf.animations.find(clip => clip.name === 'Jab Cross');
+      if (jabCrossClip) {
+        const action = mixer.clipAction(jabCrossClip);
+        action.loop = THREE.LoopRepeat;
+        action.play();
+      }
+    });
+
+    function placeModelOnFloor(floor) {
+      if (modelParent) {
+        modelParent.visible = true;
+        modelParent.position.set(floor.position.x, floor.position.y, floor.position.z);
+        modelParent.scale.set(250, 250, 250);
+      }
+    }
+
+    ratk.onPlaneAdded = (plane) => {
+      if (plane.semanticLabel === 'floor') {
+        placeModelOnFloor(plane.planeMesh);
+      }
+    };
+
+    document.getElementById('ar-button').addEventListener('click', async () => {
+      try {
+        const session = await navigator.xr.requestSession('immersive-ar', {
+          requiredFeatures: ['local-floor', 'hit-test', 'plane-detection', 'anchors'],
+          optionalFeatures: ['mesh-detection'],
         });
-
-        modelParent.visible = false;
-
-        mixer = new THREE.AnimationMixer(model);
-        const jabCrossClip = gltf.animations.find(clip => clip.name === 'Jab Cross');
-        if (jabCrossClip) {
-          const action = mixer.clipAction(jabCrossClip);
-          action.loop = THREE.LoopRepeat;
-          action.play();
-        }
-      });
-
-      function placeModelOnFloor(floor) {
-        if (modelParent) {
-          modelParent.visible = true;
-          modelParent.position.set(floor.position.x, floor.position.y, floor.position.z);
-          modelParent.scale.set(250, 250, 250);
-        }
+        renderer.xr.setReferenceSpaceType('local-floor');
+        renderer.xr.setSession(session);
+      } catch (err) {
+        console.error("Failed to start AR session", err);
       }
+    });
 
-      ratk.onPlaneAdded = (plane) => {
-        if (plane.semanticLabel === 'floor') {
-          placeModelOnFloor(plane.planeMesh);
-        }
-      };
+    const clock = new THREE.Clock();
+    function render(timestamp, frame) {
+      const delta = clock.getDelta();
+      if (mixer) mixer.update(delta);
+      ratk.update();
 
-      document.getElementById('ar-button').addEventListener('click', async () => {
-        try {
-          const session = await navigator.xr.requestSession('immersive-ar', {
-            requiredFeatures: ['local-floor', 'hit-test', 'plane-detection', 'anchors'],
-            optionalFeatures: ['mesh-detection'],
-          });
-          renderer.xr.setReferenceSpaceType('local-floor');
-          renderer.xr.setSession(session);
-        } catch (err) {
-          console.error("Failed to start AR session", err);
-        }
-      });
+      // Ensure the parent object faces the player
+      if (modelParent && modelParent.visible) {
+        const playerPosition = new THREE.Vector3();
 
-      const clock = new THREE.Clock();
-      function render(timestamp, frame) {
-        const delta = clock.getDelta();
-        if (mixer) mixer.update(delta);
-        ratk.update();
-
-        // Ensure the parent object faces the player
-        if (modelParent && modelParent.visible) {
-          const playerPosition = new THREE.Vector3();
-
-          // If in AR and a frame is provided, extract the viewer's pose
-          if (renderer.xr.isPresenting && frame) {
-            const referenceSpace = renderer.xr.getReferenceSpace();
-            const viewerPose = frame.getViewerPose(referenceSpace);
-            if (viewerPose) {
-              // Use the first view (AR sessions typically have one view)
-              const { x, y, z } = viewerPose.views[0].transform.position;
-              playerPosition.set(x, y, z);
-            }
-          } else {
-            camera.getWorldPosition(playerPosition);
+        // If in AR and a frame is provided, extract the viewer's pose
+        if (renderer.xr.isPresenting && frame) {
+          const referenceSpace = renderer.xr.getReferenceSpace();
+          const viewerPose = frame.getViewerPose(referenceSpace);
+          if (viewerPose) {
+            // Use the first view (AR sessions typically have one view)
+            const { x, y, z } = viewerPose.views[0].transform.position;
+            playerPosition.set(x, y, z);
           }
-
-          // Compute direction vector from model to player (ignore Y-axis)
-          const direction = new THREE.Vector3(
-            playerPosition.x - modelParent.position.x,
-            0, // ignore vertical movement
-            playerPosition.z - modelParent.position.z
-          ).normalize();
-
-          // Compute the new Y-axis rotation angle
-          const angle = Math.atan2(direction.x, direction.z);
-          modelParent.rotation.set(0, angle, 0);
-
-          // Debug logs
-          console.log("Player World Position:", playerPosition);
-          console.log("Model Position:", modelParent.position);
-          console.log("Computed Angle:", angle);
+        } else {
+          camera.getWorldPosition(playerPosition);
         }
 
-        // Update light position to follow the camera
-        directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2));
-        directionalLight.lookAt(modelParent ? modelParent.position : scene.position);
+        // Compute direction vector from model to player (ignore Y-axis)
+        const direction = new THREE.Vector3(
+          playerPosition.x - modelParent.position.x,
+          0, // ignore vertical movement
+          playerPosition.z - modelParent.position.z
+        ).normalize();
 
-        renderer.render(scene, camera);
+        // Compute the new Y-axis rotation angle
+        const angle = Math.atan2(direction.x, direction.z);
+        modelParent.rotation.set(0, angle, 0);
+
+        // Debug logs
+        console.log("Player World Position:", playerPosition);
+        console.log("Model Position:", modelParent.position);
+        console.log("Computed Angle:", angle);
       }
 
-      // Note that the render callback now accepts (timestamp, frame)
-      renderer.setAnimationLoop(render);
-    </script>
-  </body>
+      // Update light position to follow the camera
+      directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2));
+      directionalLight.lookAt(modelParent ? modelParent.position : scene.position);
+
+      renderer.render(scene, camera);
+    }
+
+    // Note that the render callback now accepts (timestamp, frame)
+    renderer.setAnimationLoop(render);
+  </script>
+</body>
+
 </html>

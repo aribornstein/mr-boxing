@@ -43,43 +43,48 @@
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.0;
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(window.devicePixelRatio); // Add this line
+      renderer.setPixelRatio(window.devicePixelRatio);
       renderer.xr.enabled = true;
-      renderer.setClearColor(0x000000, 0); // Set clear color to transparent black
+      renderer.setClearColor(0x000000, 0);
+      renderer.shadowMap.enabled = true; // Enable shadows
       document.body.appendChild(renderer.domElement);
       
       const scene = new THREE.Scene();
-      scene.background = null; // Set the scene background to null for passthrough
-      const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 1000);
+      scene.background = null;
+      const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
       scene.add(camera);
       
       const ratk = new RealityAccelerator(renderer.xr, { environmentRendering: true });
       scene.add(ratk.root);
       ratk.root.visible = false;
-      
+
+      // Add ambient light to brighten the model
+      const ambientLight = new THREE.AmbientLight(0xffffff, 1.5); // Adjust intensity as needed
+      scene.add(ambientLight);
+
+      // Add a directional light that follows the player
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2); 
+      directionalLight.position.set(1, 1, 1);
+      directionalLight.castShadow = true; 
+      scene.add(directionalLight);
+
       let model, mixer;
       const loader = new GLTFLoader();
       loader.load('boxer.glb', (gltf) => {
         model = gltf.scene;
 
-        // Add a directional light
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1); // Color, intensity
-        directionalLight.position.set(1, 1, 1); // Set the direction of the light
-        scene.add(directionalLight);
-
-        // Ensure the model receives shadows and is visible
         model.traverse((node) => {
-            if (node.isMesh) {
-                node.material.side = THREE.DoubleSide; // Ensure both sides are rendered
-                node.material = new THREE.MeshStandardMaterial({
-                    map: node.material.map, // Keep existing texture if any
-                    color: node.material.color || new THREE.Color(0xffffff), // Default white color
-                    metalness: 0.5, // Adjust as needed
-                    roughness: 0.5  // Adjust as needed
-                });
-                node.castShadow = true;
-                node.receiveShadow = true;
-            }
+          if (node.isMesh) {
+            node.material.side = THREE.DoubleSide;
+            node.material = new THREE.MeshStandardMaterial({
+              map: node.material.map, 
+              color: node.material.color || new THREE.Color(0xffffff),
+              metalness: 0.5,
+              roughness: 0.5
+            });
+            node.castShadow = true;
+            node.receiveShadow = true;
+          }
         });
 
         model.visible = false;
@@ -93,7 +98,7 @@
           action.play();
         }
       });
-      
+
       function placeModelOnFloor(floor) {
         if (model) {
           model.visible = true;
@@ -101,13 +106,13 @@
           model.scale.set(250, 250, 250);
         }
       }
-      
+
       ratk.onPlaneAdded = (plane) => {
         if (plane.semanticLabel === 'floor') {
           placeModelOnFloor(plane.planeMesh);
         }
       };
-      
+
       document.getElementById('ar-button').addEventListener('click', async () => {
         try {
           const session = await navigator.xr.requestSession('immersive-ar', {
@@ -120,7 +125,7 @@
           console.error("Failed to start AR session", err);
         }
       });
-      
+
       const clock = new THREE.Clock();
       function render() {
         const delta = clock.getDelta();
@@ -128,15 +133,22 @@
 
         ratk.update();
 
-        // Make the model face the camera
+        // Ensure the model always faces the player correctly (Y-axis rotation only)
         if (model && model.visible) {
-            model.lookAt(camera.position);
-            model.rotation.x = 0; // Remove X rotation
-            model.rotation.z = 0; // Remove Z rotation
+          const playerPosition = new THREE.Vector3();
+          camera.getWorldPosition(playerPosition);
+
+          const targetPosition = new THREE.Vector3(playerPosition.x, model.position.y, playerPosition.z);
+          model.lookAt(targetPosition);
         }
-        
+
+        // Update light position to follow the camera
+        directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2)); 
+        directionalLight.lookAt(model ? model.position : scene.position);
+
         renderer.render(scene, camera);
       }
+
       renderer.setAnimationLoop(render);
     </script>
   </body>

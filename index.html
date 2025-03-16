@@ -83,201 +83,204 @@
     directionalLight.castShadow = true;
     scene.add(directionalLight);
 
-    // -------------------- RAPIER PHYSICS SETUP --------------------
-    // Create a physics world with zero gravity (since we're only using collision detection)
-    const gravity = { x: 0, y: 0, z: 0 };
-    const physicsWorld = new RAPIER.World(gravity);
-    // Create an event queue to capture collision events
-    const eventQueue = new RAPIER.EventQueue(true);
+    // Initialize RAPIER and then set up the physics world
+    RAPIER.init().then(() => {
+      // -------------------- RAPIER PHYSICS SETUP --------------------
+      // Create a physics world with zero gravity (since we're only using collision detection)
+      const gravity = { x: 0, y: 0, z: 0 };
+      const physicsWorld = new RAPIER.World(gravity);
+      // Create an event queue to capture collision events
+      const eventQueue = new RAPIER.EventQueue(true);
 
-    // Store mappings for glove and hitbox colliders
-    const glovePhysics = {}; // side: { body, collider }
-    const hitboxPhysics = {}; // collider.handle: hitbox name
+      // Store mappings for glove and hitbox colliders
+      const glovePhysics = {}; // side: { body, collider }
+      const hitboxPhysics = {}; // collider.handle: hitbox name
 
-    // -------------------- LOAD HAND MODELS & ADD GLOVE COLLIDERS --------------------
-    let handModels = {};
-    const handLoader = new GLTFLoader();
-    const controller1 = renderer.xr.getController(0);
-    const controller2 = renderer.xr.getController(1);
-    scene.add(controller1, controller2);
+      // -------------------- LOAD HAND MODELS & ADD GLOVE COLLIDERS --------------------
+      let handModels = {};
+      const handLoader = new GLTFLoader();
+      const controller1 = renderer.xr.getController(0);
+      const controller2 = renderer.xr.getController(1);
+      scene.add(controller1, controller2);
 
-    function loadHandModel(controller, side, modelPath) {
-      handLoader.load(modelPath, (gltf) => {
-        const handModel = gltf.scene;
-        handModel.scale.set(0.1, 0.1, 0.1);
-        controller.add(handModel);
-        handModels[side] = handModel;
-        // Create a kinematic rigid body for the glove
-        const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
-        const body = physicsWorld.createRigidBody(bodyDesc);
-        // Create a simple spherical collider (adjust radius as needed)
-        const colliderDesc = RAPIER.ColliderDesc.ball(0.05).setSensor(true);
-        const collider = physicsWorld.createCollider(colliderDesc, body);
-        glovePhysics[side] = { body, collider };
-      });
-    }
-
-    loadHandModel(controller1, 'left', 'left_glove.glb');
-    loadHandModel(controller2, 'right', 'right_glove.glb');
-
-    // -------------------- LOAD THE BOXER & ADD HITBOX COLLIDERS --------------------
-    let model, mixer, modelParent;
-    const loader = new GLTFLoader();
-    loader.load('boxer.glb', (gltf) => {
-      model = gltf.scene;
-      modelParent = new THREE.Object3D();
-      modelParent.add(model);
-      scene.add(modelParent);
-
-      // Traverse the model: hide hitboxes and set up materials for the rest.
-      model.traverse((node) => {
-        if (node.isMesh) {
-          if (node.name.startsWith('Hit')) {
-            // Hide the visual mesh
-            node.visible = false;
-            // Create a fixed (static) rigid body for the hitbox
-            const bodyDesc = RAPIER.RigidBodyDesc.fixed();
-            const body = physicsWorld.createRigidBody(bodyDesc);
-            // Compute bounding box for the hitbox mesh
-            node.geometry.computeBoundingBox();
-            const bbox = node.geometry.boundingBox;
-            const size = new THREE.Vector3();
-            bbox.getSize(size);
-            // Rapier expects half-extents
-            const hx = size.x / 2;
-            const hy = size.y / 2;
-            const hz = size.z / 2;
-            // Create a cuboid collider matching the bounding box and mark it as sensor
-            const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
-              .setSensor(true);
-            // Position the collider at the mesh's center in local space
-            const center = new THREE.Vector3();
-            bbox.getCenter(center);
-            colliderDesc.setTranslation(center.x, center.y, center.z);
-            const collider = physicsWorld.createCollider(colliderDesc, body);
-            // Store a mapping from collider handle to hitbox name
-            hitboxPhysics[collider.handle] = node.name;
-            // Optionally store a reference on the node for further use if needed.
-          } else {
-            node.material.side = THREE.DoubleSide;
-            node.material = new THREE.MeshStandardMaterial({
-              map: node.material.map,
-              color: node.material.color || new THREE.Color(0xffffff),
-              metalness: 0.5,
-              roughness: 0.5
-            });
-            node.castShadow = true;
-            node.receiveShadow = true;
-          }
-        }
-      });
-
-      modelParent.visible = false;
-
-      mixer = new THREE.AnimationMixer(model);
-      const jabCrossClip = gltf.animations.find(clip => clip.name === 'Jab Cross');
-      if (jabCrossClip) {
-        const action = mixer.clipAction(jabCrossClip);
-        action.loop = THREE.LoopRepeat;
-        action.play();
-      }
-    });
-
-    function placeModelOnFloor(floor) {
-      if (modelParent) {
-        modelParent.visible = true;
-        modelParent.position.set(floor.position.x, floor.position.y, floor.position.z);
-        modelParent.scale.set(250, 250, 250);
-      }
-    }
-
-    ratk.onPlaneAdded = (plane) => {
-      if (plane.semanticLabel === 'floor') {
-        placeModelOnFloor(plane.planeMesh);
-      }
-    };
-
-    document.getElementById('ar-button').addEventListener('click', async () => {
-      try {
-        const session = await navigator.xr.requestSession('immersive-ar', {
-          requiredFeatures: ['local-floor', 'hit-test', 'plane-detection', 'anchors'],
-          optionalFeatures: ['mesh-detection']
+      function loadHandModel(controller, side, modelPath) {
+        handLoader.load(modelPath, (gltf) => {
+          const handModel = gltf.scene;
+          handModel.scale.set(0.1, 0.1, 0.1);
+          controller.add(handModel);
+          handModels[side] = handModel;
+          // Create a kinematic rigid body for the glove
+          const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
+          const body = physicsWorld.createRigidBody(bodyDesc);
+          // Create a simple spherical collider (adjust radius as needed)
+          const colliderDesc = RAPIER.ColliderDesc.ball(0.05).setSensor(true);
+          const collider = physicsWorld.createCollider(colliderDesc, body);
+          glovePhysics[side] = { body, collider };
         });
-        renderer.xr.setReferenceSpaceType('local-floor');
-        renderer.xr.setSession(session);
-      } catch (err) {
-        console.error("Failed to start AR session", err);
-      }
-    });
-
-    // -------------------- RENDER LOOP & PHYSICS STEP --------------------
-    const clock = new THREE.Clock();
-
-    function render(timestamp, frame) {
-      const delta = clock.getDelta();
-      if (mixer) mixer.update(delta);
-      ratk.update();
-
-      // Update glove collider positions from their controllers.
-      for (const side in glovePhysics) {
-        const { body } = glovePhysics[side];
-        // Get the controller's world position.
-        const controller = side === 'left' ? controller1 : controller2;
-        const position = new THREE.Vector3();
-        controller.getWorldPosition(position);
-        // Rapier uses its own vector type. Update the kinematic body.
-        body.setNextKinematicTranslation({ x: position.x, y: position.y, z: position.z });
       }
 
-      // Step the physics simulation.
-      physicsWorld.step(eventQueue);
+      loadHandModel(controller1, 'left', 'left_glove.glb');
+      loadHandModel(controller2, 'right', 'right_glove.glb');
 
-      // Process collision events. The callback receives collider handles and a boolean flag (started).
-      eventQueue.drainCollisionEvents((handle1, handle2, started) => {
-        if (started) {
-          // Check if one collider belongs to a glove and the other to a hitbox.
-          const gloveHit = Object.values(glovePhysics).find(g => 
-            g.collider.handle === handle1 || g.collider.handle === handle2);
-          const hitboxName = hitboxPhysics[handle1] || hitboxPhysics[handle2];
-          if (gloveHit && hitboxName) {
-            console.log("Collision with hitbox:", hitboxName);
+      // -------------------- LOAD THE BOXER & ADD HITBOX COLLIDERS --------------------
+      let model, mixer, modelParent;
+      const loader = new GLTFLoader();
+      loader.load('boxer.glb', (gltf) => {
+        model = gltf.scene;
+        modelParent = new THREE.Object3D();
+        modelParent.add(model);
+        scene.add(modelParent);
+
+        // Traverse the model: hide hitboxes and set up materials for the rest.
+        model.traverse((node) => {
+          if (node.isMesh) {
+            if (node.name.startsWith('Hit')) {
+              // Hide the visual mesh
+              node.visible = false;
+              // Create a fixed (static) rigid body for the hitbox
+              const bodyDesc = RAPIER.RigidBodyDesc.fixed();
+              const body = physicsWorld.createRigidBody(bodyDesc);
+              // Compute bounding box for the hitbox mesh
+              node.geometry.computeBoundingBox();
+              const bbox = node.geometry.boundingBox;
+              const size = new THREE.Vector3();
+              bbox.getSize(size);
+              // Rapier expects half-extents
+              const hx = size.x / 2;
+              const hy = size.y / 2;
+              const hz = size.z / 2;
+              // Create a cuboid collider matching the bounding box and mark it as sensor
+              const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
+                .setSensor(true);
+              // Position the collider at the mesh's center in local space
+              const center = new THREE.Vector3();
+              bbox.getCenter(center);
+              colliderDesc.setTranslation(center.x, center.y, center.z);
+              const collider = physicsWorld.createCollider(colliderDesc, body);
+              // Store a mapping from collider handle to hitbox name
+              hitboxPhysics[collider.handle] = node.name;
+              // Optionally store a reference on the node for further use if needed.
+            } else {
+              node.material.side = THREE.DoubleSide;
+              node.material = new THREE.MeshStandardMaterial({
+                map: node.material.map,
+                color: node.material.color || new THREE.Color(0xffffff),
+                metalness: 0.5,
+                roughness: 0.5
+              });
+              node.castShadow = true;
+              node.receiveShadow = true;
+            }
           }
+        });
+
+        modelParent.visible = false;
+
+        mixer = new THREE.AnimationMixer(model);
+        const jabCrossClip = gltf.animations.find(clip => clip.name === 'Jab Cross');
+        if (jabCrossClip) {
+          const action = mixer.clipAction(jabCrossClip);
+          action.loop = THREE.LoopRepeat;
+          action.play();
         }
       });
 
-      // Ensure the parent object faces the player.
-      if (modelParent && modelParent.visible) {
-        const playerPosition = new THREE.Vector3();
-        if (renderer.xr.isPresenting && frame) {
-          const referenceSpace = renderer.xr.getReferenceSpace();
-          const viewerPose = frame.getViewerPose(referenceSpace);
-          if (viewerPose) {
-            const { x, y, z } = viewerPose.views[0].transform.position;
-            playerPosition.set(x, y, z);
-          }
-        } else {
-          camera.getWorldPosition(playerPosition);
+      function placeModelOnFloor(floor) {
+        if (modelParent) {
+          modelParent.visible = true;
+          modelParent.position.set(floor.position.x, floor.position.y, floor.position.z);
+          modelParent.scale.set(250, 250, 250);
         }
-        const direction = new THREE.Vector3(
-          playerPosition.x - modelParent.position.x,
-          0,
-          playerPosition.z - modelParent.position.z
-        ).normalize();
-        const angle = Math.atan2(direction.x, direction.z);
-        modelParent.rotation.set(0, angle, 0);
-
-        console.log("Player World Position:", playerPosition);
-        console.log("Model Position:", modelParent.position);
-        console.log("Computed Angle:", angle);
       }
 
-      directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2));
-      directionalLight.lookAt(modelParent ? modelParent.position : scene.position);
+      ratk.onPlaneAdded = (plane) => {
+        if (plane.semanticLabel === 'floor') {
+          placeModelOnFloor(plane.planeMesh);
+        }
+      };
 
-      renderer.render(scene, camera);
-    }
+      document.getElementById('ar-button').addEventListener('click', async () => {
+        try {
+          const session = await navigator.xr.requestSession('immersive-ar', {
+            requiredFeatures: ['local-floor', 'hit-test', 'plane-detection', 'anchors'],
+            optionalFeatures: ['mesh-detection']
+          });
+          renderer.xr.setReferenceSpaceType('local-floor');
+          renderer.xr.setSession(session);
+        } catch (err) {
+          console.error("Failed to start AR session", err);
+        }
+      });
 
-    renderer.setAnimationLoop(render);
+      // -------------------- RENDER LOOP & PHYSICS STEP --------------------
+      const clock = new THREE.Clock();
+
+      function render(timestamp, frame) {
+        const delta = clock.getDelta();
+        if (mixer) mixer.update(delta);
+        ratk.update();
+
+        // Update glove collider positions from their controllers.
+        for (const side in glovePhysics) {
+          const { body } = glovePhysics[side];
+          // Get the controller's world position.
+          const controller = side === 'left' ? controller1 : controller2;
+          const position = new THREE.Vector3();
+          controller.getWorldPosition(position);
+          // Rapier uses its own vector type. Update the kinematic body.
+          body.setNextKinematicTranslation({ x: position.x, y: position.y, z: position.z });
+        }
+
+        // Step the physics simulation.
+        physicsWorld.step(eventQueue);
+
+        // Process collision events. The callback receives collider handles and a boolean flag (started).
+        eventQueue.drainCollisionEvents((handle1, handle2, started) => {
+          if (started) {
+            // Check if one collider belongs to a glove and the other to a hitbox.
+            const gloveHit = Object.values(glovePhysics).find(g => 
+              g.collider.handle === handle1 || g.collider.handle === handle2);
+            const hitboxName = hitboxPhysics[handle1] || hitboxPhysics[handle2];
+            if (gloveHit && hitboxName) {
+              console.log("Collision with hitbox:", hitboxName);
+            }
+          }
+        });
+
+        // Ensure the parent object faces the player.
+        if (modelParent && modelParent.visible) {
+          const playerPosition = new THREE.Vector3();
+          if (renderer.xr.isPresenting && frame) {
+            const referenceSpace = renderer.xr.getReferenceSpace();
+            const viewerPose = frame.getViewerPose(referenceSpace);
+            if (viewerPose) {
+              const { x, y, z } = viewerPose.views[0].transform.position;
+              playerPosition.set(x, y, z);
+            }
+          } else {
+            camera.getWorldPosition(playerPosition);
+          }
+          const direction = new THREE.Vector3(
+            playerPosition.x - modelParent.position.x,
+            0,
+            playerPosition.z - modelParent.position.z
+          ).normalize();
+          const angle = Math.atan2(direction.x, direction.z);
+          modelParent.rotation.set(0, angle, 0);
+
+          console.log("Player World Position:", playerPosition);
+          console.log("Model Position:", modelParent.position);
+          console.log("Computed Angle:", angle);
+        }
+
+        directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2));
+        directionalLight.lookAt(modelParent ? modelParent.position : scene.position);
+
+        renderer.render(scene, camera);
+      }
+
+      renderer.setAnimationLoop(render);
+    });
   </script>
 </body>
 </html>

@@ -164,7 +164,7 @@
               colliderDesc.setTranslation(center.x, center.y, center.z);
               const collider = physicsWorld.createCollider(colliderDesc, body);
               // Store a mapping from collider handle to hitbox name
-              hitboxPhysics[collider.handle] = node.name;
+              hitboxPhysics[node.uuid] = node.name;
               // Optionally store a reference on the node for further use if needed.
             } else {
               node.material.side = THREE.DoubleSide;

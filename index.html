@@ -258,6 +258,7 @@
 
         // Process collision events. The callback receives collider handles and a boolean flag (started).
         eventQueue.drainCollisionEvents((handle1, handle2, started) => {
+          console.log("Collision Event:", { handle1, handle2, started }); // Log every collision 
           if (started) {
             // Check if one collider belongs to a glove and the other to a hitbox.
             const gloveHit = Object.values(glovePhysics).find(g => 

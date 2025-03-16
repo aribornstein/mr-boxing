@@ -133,14 +133,22 @@
 
         ratk.update();
 
-        // Ensure the model always faces the player correctly (Y-axis rotation only)
         if (model && model.visible) {
-          const playerPosition = new THREE.Vector3();
-          camera.getWorldPosition(playerPosition);
+            // Get the position of the camera (player)
+            const playerPosition = new THREE.Vector3();
+            camera.getWorldPosition(playerPosition);
 
-          const targetPosition = new THREE.Vector3(playerPosition.x, model.position.y, playerPosition.z);
-          model.lookAt(targetPosition);
+            // Calculate the direction vector from the model to the player
+            const direction = new THREE.Vector3();
+            direction.subVectors(playerPosition, model.position);
+
+            // Compute the angle required to rotate the model to face the player
+            const angle = Math.atan2(direction.x, direction.z);
+
+            // Set the model's rotation around the Y-axis
+            model.rotation.set(0, angle, 0);
         }
+
 
         // Update light position to follow the camera
         directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2)); 

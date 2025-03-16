@@ -54,6 +54,15 @@
       const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
       scene.add(camera);
       
+      // Resize handler
+      window.addEventListener("resize", () => {
+        if (!renderer.xr.getSession()) {
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+      });
+      
       const ratk = new RealityAccelerator(renderer.xr, { environmentRendering: true });
       scene.add(ratk.root);
       ratk.root.visible = false;
@@ -132,44 +141,44 @@
       });
 
       const clock = new THREE.Clock();
-      function render() {
+      function render(timestamp, frame) {
         const delta = clock.getDelta();
         if (mixer) mixer.update(delta);
-
         ratk.update();
 
         // Ensure the parent object faces the player
         if (modelParent && modelParent.visible) {
           const playerPosition = new THREE.Vector3();
 
-          // Ensure WebXR is active before trying to get the camera world position
-          if (renderer.xr.isPresenting) {
-              const xrCamera = renderer.xr.getCamera(camera);
-              if (xrCamera) {
-                  xrCamera.getWorldPosition(playerPosition);
-              }
+          // If in AR and a frame is provided, extract the viewer's pose
+          if (renderer.xr.isPresenting && frame) {
+            const referenceSpace = renderer.xr.getReferenceSpace();
+            const viewerPose = frame.getViewerPose(referenceSpace);
+            if (viewerPose) {
+              // Use the first view (AR sessions typically have one view)
+              const { x, y, z } = viewerPose.views[0].transform.position;
+              playerPosition.set(x, y, z);
+            }
           } else {
-              camera.getWorldPosition(playerPosition); // Use standard camera position if WebXR isn't active
+            camera.getWorldPosition(playerPosition);
           }
 
           // Compute direction vector from model to player (ignore Y-axis)
           const direction = new THREE.Vector3(
-              playerPosition.x - modelParent.position.x,
-              0, // Ignore vertical movement
-              playerPosition.z - modelParent.position.z
+            playerPosition.x - modelParent.position.x,
+            0, // ignore vertical movement
+            playerPosition.z - modelParent.position.z
           ).normalize();
 
           // Compute the new Y-axis rotation angle
           const angle = Math.atan2(direction.x, direction.z);
-
-          // Apply the computed Y-rotation to the parent object
           modelParent.rotation.set(0, angle, 0);
 
-          // Debugging logs
+          // Debug logs
           console.log("Player World Position:", playerPosition);
           console.log("Model Position:", modelParent.position);
           console.log("Computed Angle:", angle);
-      }
+        }
 
         // Update light position to follow the camera
         directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2));
@@ -178,6 +187,7 @@
         renderer.render(scene, camera);
       }
 
+      // Note that the render callback now accepts (timestamp, frame)
       renderer.setAnimationLoop(render);
     </script>
   </body>

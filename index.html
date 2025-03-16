@@ -280,6 +280,11 @@
         directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2));
         directionalLight.lookAt(modelParent ? modelParent.position : scene.position);
 
+        // Update the debugger
+        if (debuggerInstance && debuggerInstance.isEnabled()) { // Add this line
+            debuggerInstance.update(); // Add this line
+        } // Add this line
+
         renderer.render(scene, camera);
       }
 

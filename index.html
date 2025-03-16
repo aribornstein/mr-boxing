@@ -152,9 +152,9 @@
               const size = new THREE.Vector3();
               bbox.getSize(size);
               // Rapier expects half-extents
-              const hx = size.x / 2;
-              const hy = size.y / 2;
-              const hz = size.z / 2;
+              const hx = size.x / 2 * 0.5; // Reduced by 50%
+              const hy = size.y / 2 * 0.5; // Reduced by 50%
+              const hz = size.z / 2 * 0.5; // Reduced by 50%
               // Create a cuboid collider matching the bounding box and mark it as sensor
               const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
                 .setSensor(true);

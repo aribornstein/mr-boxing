@@ -240,7 +240,7 @@
         }
 
         if (modelParent && modelParent.visible) {
-          model.traverse((node) => {
+          modelParent.traverse((node) => {
             if (node.isMesh && node.name.startsWith('Hit')) {
               // Compute the node's world position (and orientation if needed)
               const worldPos = new THREE.Vector3();

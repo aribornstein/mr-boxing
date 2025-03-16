@@ -112,14 +112,14 @@
       function loadHandModel(controller, side, modelPath) {
         handLoader.load(modelPath, (gltf) => {
           const handModel = gltf.scene;
-          handModel.scale.set(0.4, 0.4, 0.4);
+          handModel.scale.set(0.2, 0.2, 0.2);
           controller.add(handModel);
           handModels[side] = handModel;
           // Create a kinematic rigid body for the glove
           const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
           const body = physicsWorld.createRigidBody(bodyDesc);
           // Create a simple spherical collider (adjust radius as needed)
-          const colliderDesc = RAPIER.ColliderDesc.ball(0.05).setSensor(true);
+          const colliderDesc = RAPIER.ColliderDesc.ball(0.1).setSensor(true);
           const collider = physicsWorld.createCollider(colliderDesc, body);
           glovePhysics[side] = { body, collider };
         });
@@ -238,6 +238,19 @@
           // Rapier uses its own vector type. Update the kinematic body.
           body.setNextKinematicTranslation({ x: position.x, y: position.y, z: position.z });
         }
+
+        // After the physics step, update hitbox positions
+        model.traverse((node) => {
+          if (node.isMesh && node.name.startsWith('Hit')) {
+            // Compute the node's world position (and orientation if needed)
+            const worldPos = new THREE.Vector3();
+            node.getWorldPosition(worldPos);
+            // Assume you stored the rigid body reference alongside, e.g., hitboxPhysics[node.uuid].body
+            const body = hitboxPhysics[node.uuid].body;
+            // Update the fixed body's transform (you may need to convert Three.js vector to Rapier's vector)
+            body.setTranslation({ x: worldPos.x, y: worldPos.y, z: worldPos.z }, true);
+          }
+        });
 
         // Step the physics simulation.
         physicsWorld.step(eventQueue);

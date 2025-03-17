@@ -259,8 +259,22 @@
         physicsWorld.step(eventQueue);
         eventQueue.drainCollisionEvents((handle1, handle2, started) => {
           console.log("Collision Event:", { handle1, handle2, started });
-          // (You can add logic here to respond to collisions.)
-        });
+          // Retrieve the hitbox name from the handle
+          const hitboxName = hitboxPhysics[handle1] ? handle1 : handle2;
+          if (hitboxName) {
+            // Retrieve the hitbox's body and collider
+            const { body, collider } = hitboxPhysics[hitboxName];
+            // Optionally, you can also retrieve the glove's body and collider
+            const gloveSide = handle1 === hitboxName ? handle2 : handle1;
+            const { body: gloveBody, collider: gloveCollider } = glovePhysics[gloveSide];
+            // Perform custom logic based on the hitbox and glove colliders
+            if (started) {
+              console.log(`Collision started between ${hitboxName} and ${gloveSide}`);
+            } else {
+              console.log(`Collision ended between ${hitboxName} and ${gloveSide}`);
+            }
+          }       
+         });
 
         // Ensure the boxer faces the player.
         if (modelParent && modelParent.visible) {

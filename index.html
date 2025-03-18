@@ -106,7 +106,9 @@
         hitAction.reset().play(); // Reset and then play
 
         hitAction.addEventListener('finished', function () {
-          mixer.clipAction(jabCrossClip).reset().play();
+          const action = mixer.clipAction(jabCrossClip).reset();
+          action.loop = THREE.LoopRepeat;
+          action.play();
           hitAnimationPlaying = false;
         });
       }

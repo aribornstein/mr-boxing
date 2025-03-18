@@ -277,11 +277,14 @@
               const gloveSideName = glove[0];
               const { body: gloveBody, collider: gloveCollider } = glove[1];
 
-              // Perform custom logic based on the hitbox and glove colliders
-              if (started) {
-                console.log(`Collision started between ${hitboxName} and ${gloveSideName}`);
-              } else {
-                console.log(`Collision ended between ${hitboxName} and ${gloveSideName}`);
+              if (hitboxName==="Hit_Head" || hitboxName==="Hit_Neck") {
+                playHitAnimation('Head Hit', jabCrossClip, mixer, gltf);
+              }
+              else if (hitboxName==="Hit_Torso") {
+                playHitAnimation('Receive', jabCrossClip, mixer, gltf);
+              }
+              else if (hitboxName.endsWith("Leg")) {
+                playHitAnimation('Ginga', jabCrossClip, mixer, gltf);
               }
             }
           }
@@ -322,6 +325,23 @@
 
       renderer.setAnimationLoop(render);
     });
+
+    function playHitAnimation(clipName, jabCrossClip, mixer, gltf) {
+      mixer.clipAction(jabCrossClip).stop();
+      const hitClip = gltf.animations.find(clip => clip.name === clipName);
+      if (hitClip) {
+        const hitAction = mixer.clipAction(hitClip);
+        hitAction.loop = THREE.LoopOnce;
+        hitAction.clampWhenFinished = true;
+        hitAction.timeScale = 3;
+        hitAction.play();
+        hitAction.reset().play();
+    
+        hitAction.addEventListener('finished', function () {
+          mixer.clipAction(jabCrossClip).reset().play();
+        });
+      }
+    }
   </script>
 </body>
 </html>

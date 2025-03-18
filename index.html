@@ -51,7 +51,74 @@
     if (!navigator.xr) {
       console.error("WebXR not available on this device/browser.");
     }
+    // -------------------- THREE.JS SETUP --------------------
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.xr.enabled = true;
+    renderer.setClearColor(0x000000, 0);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
 
+    const scene = new THREE.Scene();
+    scene.background = null;
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+    scene.add(camera);
+
+    window.addEventListener("resize", () => {
+      if (!renderer.xr.getSession()) {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+    });
+
+    const ratk = new RealityAccelerator(renderer.xr, { environmentRendering: true });
+    scene.add(ratk.root);
+    ratk.root.visible = false;
+
+    ratk.onPlaneAdded = (plane) => {
+      if (plane.semanticLabel === 'floor') {
+        placeModelOnFloor(plane.planeMesh);
+      }
+    };
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    directionalLight.position.set(1, 1, 1);
+    directionalLight.castShadow = true;
+    scene.add(directionalLight);
+
+    let hitAnimationPlaying = false;
+
+    function playHitAnimation(clipName, jabCrossClip, mixer, gltf) {
+      console.log("playHitAnimation called with clipName:", clipName);
+      mixer.clipAction(jabCrossClip).stop();
+
+      const hitClip = gltf.animations.find(clip => clip.name === clipName);
+      if (hitClip) {
+        hitAnimationPlaying = true;
+        console.log("Found hitClip:", clipName);
+        const hitAction = mixer.clipAction(hitClip);
+        hitAction.loop = THREE.LoopOnce;
+        hitAction.clampWhenFinished = true;
+        hitAction.timeScale = 1; // Set timeScale to 1
+        hitAction.reset().play(); // Reset and then play
+
+        hitAction.addEventListener('finished', function () {
+          mixer.clipAction(jabCrossClip).reset().play();
+          hitAnimationPlaying = false;
+        });
+      }
+      else {
+        console.log("Hit clip not found:", clipName);
+      }
+    }
 
     function placeModelOnFloor(floor) {
       if (modelParent) {
@@ -75,74 +142,6 @@
         renderer.xr.setReferenceSpaceType('local-floor');
         renderer.xr.setSession(session);
 
-        // -------------------- THREE.JS SETUP --------------------
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.0;
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.xr.enabled = true;
-        renderer.setClearColor(0x000000, 0);
-        renderer.shadowMap.enabled = true;
-        document.body.appendChild(renderer.domElement);
-
-        const scene = new THREE.Scene();
-        scene.background = null;
-        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-        scene.add(camera);
-
-        window.addEventListener("resize", () => {
-          if (!renderer.xr.getSession()) {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-          }
-        });
-
-        const ratk = new RealityAccelerator(renderer.xr, { environmentRendering: true });
-        scene.add(ratk.root);
-        ratk.root.visible = false;
-
-        ratk.onPlaneAdded = (plane) => {
-          if (plane.semanticLabel === 'floor') {
-            placeModelOnFloor(plane.planeMesh);
-          }
-        };
-
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
-        scene.add(ambientLight);
-
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
-        directionalLight.position.set(1, 1, 1);
-        directionalLight.castShadow = true;
-        scene.add(directionalLight);
-
-        let hitAnimationPlaying = false;
-
-        function playHitAnimation(clipName, jabCrossClip, mixer, gltf) {
-          console.log("playHitAnimation called with clipName:", clipName);
-          mixer.clipAction(jabCrossClip).stop();
-
-          const hitClip = gltf.animations.find(clip => clip.name === clipName);
-          if (hitClip) {
-            hitAnimationPlaying = true;
-            console.log("Found hitClip:", clipName);
-            const hitAction = mixer.clipAction(hitClip);
-            hitAction.loop = THREE.LoopOnce;
-            hitAction.clampWhenFinished = true;
-            hitAction.timeScale = 1; // Set timeScale to 1
-            hitAction.reset().play(); // Reset and then play
-
-            hitAction.addEventListener('finished', function () {
-              mixer.clipAction(jabCrossClip).reset().play();
-              hitAnimationPlaying = false;
-            });
-          }
-          else {
-            console.log("Hit clip not found:", clipName);
-          }
-        }
 
         // Initialize RAPIER and then set up the physics world
         RAPIER.init().then(() => {

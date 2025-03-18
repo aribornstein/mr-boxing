@@ -96,6 +96,7 @@
       // Store mappings for glove and hitbox colliders
       const glovePhysics = {}; // side: { body, collider }
       const hitboxPhysics = {}; // keyed by hitbox name
+      const colliderToHitbox = {}; // collider handle to hitbox name
 
       // Add the debugger
       const debuggerInstance = new Debugger(physicsWorld);
@@ -167,6 +168,7 @@
               const collider = physicsWorld.createCollider(colliderDesc, body);
               // Store a mapping from collider handle to hitbox name
               hitboxPhysics[node.name] = { body, collider };
+              colliderToHitbox[collider.handle] = node.name;
             } else {
               node.material.side = THREE.DoubleSide;
               node.material = new THREE.MeshStandardMaterial({
@@ -258,23 +260,32 @@
         // Process collision events.
         physicsWorld.step(eventQueue);
         eventQueue.drainCollisionEvents((handle1, handle2, started) => {
-          console.log("Collision Event:", { handle1, handle2, started });
           // Retrieve the hitbox name from the handle
-          const hitboxName = hitboxPhysics[handle1] ? handle1 : handle2;
-          if (hitboxName) {
+          const hitboxName1 = colliderToHitbox[handle1];
+          const hitboxName2 = colliderToHitbox[handle2];
+
+          if (hitboxName1 || hitboxName2) {
+            const hitboxName = hitboxName1 || hitboxName2;
             // Retrieve the hitbox's body and collider
             const { body, collider } = hitboxPhysics[hitboxName];
-            // Optionally, you can also retrieve the glove's body and collider
-            const gloveSide = handle1 === hitboxName ? handle2 : handle1;
-            const { body: gloveBody, collider: gloveCollider } = glovePhysics[gloveSide];
-            // Perform custom logic based on the hitbox and glove colliders
-            if (started) {
-              console.log(`Collision started between ${hitboxName} and ${gloveSide}`);
-            } else {
-              console.log(`Collision ended between ${hitboxName} and ${gloveSide}`);
+
+            // Determine which side is the glove
+            const gloveSide = hitboxName1 ? handle2 : handle1;
+            const glove = Object.entries(glovePhysics).find(([side, { collider }]) => collider.handle === gloveSide);
+
+            if (glove) {
+              const gloveSideName = glove[0];
+              const { body: gloveBody, collider: gloveCollider } = glove[1];
+
+              // Perform custom logic based on the hitbox and glove colliders
+              if (started) {
+                console.log(`Collision started between ${hitboxName} and ${gloveSideName}`);
+              } else {
+                console.log(`Collision ended between ${hitboxName} and ${gloveSideName}`);
+              }
             }
-          }       
-         });
+          }
+        });
 
         // Ensure the boxer faces the player.
         if (modelParent && modelParent.visible) {

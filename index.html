@@ -160,9 +160,10 @@
       loadHandModel(controller2, 'right', 'right_glove.glb');
 
       // -------------------- LOAD THE BOXER & ADD HITBOX COLLIDERS --------------------
-      let model, mixer, modelParent;
+      let model, mixer, modelParent, boxerGltf;
       const loader = new GLTFLoader();
       loader.load('boxer.glb', (gltf) => {
+        boxerGltf = gltf;
         model = gltf.scene;
         modelParent = new THREE.Object3D();
         modelParent.add(model);
@@ -316,8 +317,8 @@
               if (hitboxName === "Hit_Head" || hitboxName === "Hit_Neck") {
                 console.log("Calling playHitAnimation for Head Hit"); // ADDED LOG
                 if (!hitAnimationPlaying) { // ADD THIS CHECK
-                  if (model && jabCrossClip) {
-                    playHitAnimation('Head Hit', jabCrossClip, mixer, model);
+                  if (boxerGltf && jabCrossClip) {
+                    playHitAnimation('Head Hit', jabCrossClip, mixer, boxerGltf);
                   } else {
                     console.error("Animation resources not ready yet.");
                   }
@@ -328,11 +329,11 @@
               }
               else if (hitboxName === "Hit_Torso") {
                 console.log("Calling playHitAnimation for Receive Stomach Uppercut"); // ADDED LOG
-                playHitAnimation('Receive Stomach Uppercut', jabCrossClip, mixer, model);
+                playHitAnimation('Receive Stomach Uppercut', jabCrossClip, mixer, boxerGltf);
               }
               else if (hitboxName.endsWith("Leg")) {
                 console.log("Calling playHitAnimation for Ginga Backward"); // ADDED LOG
-                playHitAnimation('Ginga Backward', jabCrossClip, mixer, model);
+                playHitAnimation('Ginga Backward', jabCrossClip, mixer, boxerGltf);
               }
             }
             else {

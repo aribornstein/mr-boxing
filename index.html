@@ -92,6 +92,10 @@
     let hitAnimationPlaying = false;
 
     function playHitAnimation(clipName, jabCrossClip, mixer, gltf) {
+      if (hitAnimationPlaying) {
+        console.log("Hit animation already playing, skipping.");
+        return;
+      }
       console.log("playHitAnimation called with clipName:", clipName);
       mixer.clipAction(jabCrossClip).stop();
 

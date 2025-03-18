@@ -186,6 +186,10 @@
         modelParent.visible = false;
 
         mixer = new THREE.AnimationMixer(model);
+        // Log the names of all animations
+        gltf.animations.forEach(clip => {
+          console.log('Animation Clip Name:', clip.name);
+        });
         const jabCrossClip = gltf.animations.find(clip => clip.name === 'Jab Cross');
         if (jabCrossClip) {
           const action = mixer.clipAction(jabCrossClip);
@@ -328,6 +332,7 @@
 
     function playHitAnimation(clipName, jabCrossClip, mixer, gltf) {
       mixer.clipAction(jabCrossClip).stop();
+      
       const hitClip = gltf.animations.find(clip => clip.name === clipName);
       if (hitClip) {
         const hitAction = mixer.clipAction(hitClip);

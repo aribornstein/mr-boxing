@@ -331,10 +331,12 @@
     });
 
     function playHitAnimation(clipName, jabCrossClip, mixer, gltf) {
+      console.log("playHitAnimation called with clipName:", clipName); // ADDED LOG
       mixer.clipAction(jabCrossClip).stop();
       
       const hitClip = gltf.animations.find(clip => clip.name === clipName);
       if (hitClip) {
+        console.log("Found hitClip:", clipName); // ADDED LOG
         const hitAction = mixer.clipAction(hitClip);
         hitAction.loop = THREE.LoopOnce;
         hitAction.clampWhenFinished = true;
@@ -345,6 +347,9 @@
         hitAction.addEventListener('finished', function () {
           mixer.clipAction(jabCrossClip).reset().play();
         });
+      }
+      else {
+        console.log("Hit clip not found:", clipName); // ADDED LOG
       }
     }
   </script>

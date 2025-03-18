@@ -257,6 +257,77 @@
           });
           renderer.xr.setReferenceSpaceType('local-floor');
           renderer.xr.setSession(session);
+
+          // -------------------- LOAD THE BOXER & ADD HITBOX COLLIDERS --------------------
+          let model, mixer, modelParent, boxerGltf, jabCrossClip;
+          const loader = new GLTFLoader();
+          loader.load('boxer.glb', (gltf) => {
+            boxerGltf = gltf;
+            model = gltf.scene;
+            modelParent = new THREE.Object3D();
+            modelParent.add(model);
+            scene.add(modelParent);
+
+            // Traverse the model: hide hitboxes and set up materials for the rest.
+            model.traverse((node) => {
+              if (node.isMesh) {
+                if (node.name.startsWith('Hit')) {
+                  // Hide the visual mesh
+                  node.visible = false;
+                  // *** FIX APPLIED: Create a dynamic rigid body for hitboxes ***
+                  const bodyDesc = RAPIER.RigidBodyDesc.dynamic();
+                  const body = physicsWorld.createRigidBody(bodyDesc);
+                  // Compute bounding box for the hitbox mesh
+                  node.geometry.computeBoundingBox();
+                  const bbox = node.geometry.boundingBox;
+                  const size = new THREE.Vector3();
+                  bbox.getSize(size);
+                  // Rapier expects half-extents; adjust as needed.
+                  const hx = (size.x / 2) * 0.1;
+                  const hy = (size.y / 2) * 0.1;
+                  const hz = (size.z / 2) * 0.1;
+                  // Create a cuboid collider matching the bounding box
+                  const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
+                    // (Optionally, you can set the collider as sensor if needed)
+                    // .setSensor(true);
+                    .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+                  // Position the collider at the mesh's center in local space
+                  const center = new THREE.Vector3();
+                  bbox.getCenter(center);
+                  colliderDesc.setTranslation(center.x, center.y, center.z);
+                  const collider = physicsWorld.createCollider(colliderDesc, body);
+                  // Store a mapping from collider handle to hitbox name
+                  hitboxPhysics[node.name] = { body, collider };
+                  colliderToHitbox[collider.handle] = node.name;
+                } else {
+                  node.material.side = THREE.DoubleSide;
+                  node.material = new THREE.MeshStandardMaterial({
+                    map: node.material.map,
+                    color: node.material.color || new THREE.Color(0xffffff),
+                    metalness: 0.5,
+                    roughness: 0.5
+                  });
+                  node.castShadow = true;
+                  node.receiveShadow = true;
+                }
+              }
+            });
+
+            modelParent.visible = false;
+
+            mixer = new THREE.AnimationMixer(model);
+            // Log the names of all animations
+            gltf.animations.forEach(clip => {
+              console.log('Animation Clip Name:', clip.name);
+            });
+            jabCrossClip = gltf.animations.find(clip => clip.name === 'Jab Cross');
+            if (jabCrossClip) {
+              const action = mixer.clipAction(jabCrossClip);
+              action.loop = THREE.LoopRepeat;
+              action.play();
+            }
+          });
+
         } catch (err) {
           console.error("Failed to start AR session", err);
         }

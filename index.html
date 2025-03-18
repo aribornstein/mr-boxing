@@ -304,54 +304,56 @@
         }
 
         // Process collision events.
-        physicsWorld.step(eventQueue);
-        eventQueue.drainCollisionEvents((handle1, handle2, started) => {
-          // Retrieve the hitbox name from the handle
-          const hitboxName1 = colliderToHitbox[handle1];
-          const hitboxName2 = colliderToHitbox[handle2];
+        if (collisionEventsEnabled) {
+          physicsWorld.step(eventQueue);
+          eventQueue.drainCollisionEvents((handle1, handle2, started) => {
+            // Retrieve the hitbox name from the handle
+            const hitboxName1 = colliderToHitbox[handle1];
+            const hitboxName2 = colliderToHitbox[handle2];
 
-          if (hitboxName1 || hitboxName2) {
-            const hitboxName = hitboxName1 || hitboxName2;
-            // Retrieve the hitbox's body and collider
-            const { body, collider } = hitboxPhysics[hitboxName];
+            if (hitboxName1 || hitboxName2) {
+              const hitboxName = hitboxName1 || hitboxName2;
+              // Retrieve the hitbox's body and collider
+              const { body, collider } = hitboxPhysics[hitboxName];
 
-            // Determine which side is the glove
-            const gloveSide = hitboxName1 ? handle2 : handle1;
-            const glove = Object.entries(glovePhysics).find(([side, { collider }]) => collider.handle === gloveSide);
+              // Determine which side is the glove
+              const gloveSide = hitboxName1 ? handle2 : handle1;
+              const glove = Object.entries(glovePhysics).find(([side, { collider }]) => collider.handle === gloveSide);
 
-            if (glove) {
-              const gloveSideName = glove[0];
-              const { body: gloveBody, collider: gloveCollider } = glove[1];
+              if (glove) {
+                const gloveSideName = glove[0];
+                const { body: gloveBody, collider: gloveCollider } = glove[1];
 
-              console.log("Collision detected with hitbox:", hitboxName); // ADDED LOG
+                console.log("Collision detected with hitbox:", hitboxName); // ADDED LOG
 
-              if (hitboxName === "Hit_Head" || hitboxName === "Hit_Neck") {
-                console.log("Calling playHitAnimation for Head Hit"); // ADDED LOG
-                if (!hitAnimationPlaying) { // ADD THIS CHECK
-                  if (boxerGltf && jabCrossClip) {
-                    playHitAnimation('Head Hit', jabCrossClip, mixer, boxerGltf);
+                if (hitboxName === "Hit_Head" || hitboxName === "Hit_Neck") {
+                  console.log("Calling playHitAnimation for Head Hit"); // ADDED LOG
+                  if (!hitAnimationPlaying) { // ADD THIS CHECK
+                    if (boxerGltf && jabCrossClip) {
+                      playHitAnimation('Head Hit', jabCrossClip, mixer, boxerGltf);
+                    } else {
+                      console.error("Animation resources not ready yet.");
+                    }
+
                   } else {
-                    console.error("Animation resources not ready yet.");
+                    console.log("Hit animation already playing, skipping.");
                   }
-
-                } else {
-                  console.log("Hit animation already playing, skipping.");
+                }
+                else if (hitboxName === "Hit_Torso") {
+                  console.log("Calling playHitAnimation for Receive Stomach Uppercut"); // ADDED LOG
+                  playHitAnimation('Receive Stomach Uppercut', jabCrossClip, mixer, boxerGltf);
+                }
+                else if (hitboxName.endsWith("Leg")) {
+                  console.log("Calling playHitAnimation for Ginga Backward"); // ADDED LOG
+                  playHitAnimation('Ginga Backward', jabCrossClip, mixer, boxerGltf);
                 }
               }
-              else if (hitboxName === "Hit_Torso") {
-                console.log("Calling playHitAnimation for Receive Stomach Uppercut"); // ADDED LOG
-                playHitAnimation('Receive Stomach Uppercut', jabCrossClip, mixer, boxerGltf);
-              }
-              else if (hitboxName.endsWith("Leg")) {
-                console.log("Calling playHitAnimation for Ginga Backward"); // ADDED LOG
-                playHitAnimation('Ginga Backward', jabCrossClip, mixer, boxerGltf);
+              else {
+                console.log("No glove found for collision"); // ADDED LOG
               }
             }
-            else {
-              console.log("No glove found for collision"); // ADDED LOG
-            }
-          }
-        });
+          });
+        }
 
         // Ensure the boxer faces the player.
         if (modelParent && modelParent.visible) {

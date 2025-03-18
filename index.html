@@ -160,7 +160,7 @@
       loadHandModel(controller2, 'right', 'right_glove.glb');
 
       // -------------------- LOAD THE BOXER & ADD HITBOX COLLIDERS --------------------
-      let model, mixer, modelParent, boxerGltf;
+      let model, mixer, modelParent, boxerGltf, jabCrossClip;
       const loader = new GLTFLoader();
       loader.load('boxer.glb', (gltf) => {
         boxerGltf = gltf;
@@ -221,7 +221,7 @@
         gltf.animations.forEach(clip => {
           console.log('Animation Clip Name:', clip.name);
         });
-        const jabCrossClip = gltf.animations.find(clip => clip.name === 'Jab Cross');
+        jabCrossClip = gltf.animations.find(clip => clip.name === 'Jab Cross');
         if (jabCrossClip) {
           const action = mixer.clipAction(jabCrossClip);
           action.loop = THREE.LoopRepeat;

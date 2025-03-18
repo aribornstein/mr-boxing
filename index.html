@@ -46,6 +46,7 @@
     import { RealityAccelerator } from 'https://unpkg.com/ratk@0.3.0';
     import * as RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.14.0/rapier.es.js';
     import { Debugger } from './debugger.js';
+    import { eventBus } from './eventBus.js';
 
     if (!navigator.xr) {
       console.error("WebXR not available on this device/browser.");
@@ -236,6 +237,9 @@
           const spawnOffset = new THREE.Vector3(0, 0, -2); // Offset of 2 meters in the negative Z direction
           modelParent.position.copy(floor.position).add(spawnOffset);
           modelParent.scale.set(250, 250, 250);
+
+          // Emit an event to signal that the scene is ready for collision events
+          eventBus.emit('sceneReady');
         }
       }
 
@@ -260,6 +264,13 @@
 
       // -------------------- RENDER LOOP & PHYSICS STEP --------------------
       const clock = new THREE.Clock();
+      let collisionEventsEnabled = false; // Flag to control collision events
+
+      // Listen for the sceneReady event
+      eventBus.on('sceneReady', () => {
+        collisionEventsEnabled = true;
+        console.log("Scene ready! Collision events enabled.");
+      });
 
       function render(timestamp, frame) {
         const delta = clock.getDelta();

@@ -66,12 +66,6 @@
       }
     }
 
-    ratk.onPlaneAdded = (plane) => {
-      if (plane.semanticLabel === 'floor') {
-        placeModelOnFloor(plane.planeMesh);
-      }
-    };
-
     document.getElementById('ar-button').addEventListener('click', async () => {
       try {
         const session = await navigator.xr.requestSession('immersive-ar', {
@@ -109,6 +103,12 @@
         const ratk = new RealityAccelerator(renderer.xr, { environmentRendering: true });
         scene.add(ratk.root);
         ratk.root.visible = false;
+
+        ratk.onPlaneAdded = (plane) => {
+          if (plane.semanticLabel === 'floor') {
+            placeModelOnFloor(plane.planeMesh);
+          }
+        };
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
         scene.add(ambientLight);
@@ -260,6 +260,8 @@
           });
         });
 
+
+
         // -------------------- RENDER LOOP & PHYSICS STEP --------------------
         const clock = new THREE.Clock();
         let collisionEventsEnabled = false; // Flag to control collision events
@@ -269,6 +271,7 @@
           collisionEventsEnabled = true;
           console.log("Scene ready! Collision events enabled.");
         });
+
 
         function render(timestamp, frame) {
           const delta = clock.getDelta();

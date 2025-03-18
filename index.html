@@ -84,27 +84,37 @@
     directionalLight.castShadow = true;
     scene.add(directionalLight);
 
+    let lastHitTime = 0;
+    const hitDebounceInterval = 500; // milliseconds
+
     function playHitAnimation(clipName, jabCrossClip, mixer, gltf) {
-      console.log("playHitAnimation called with clipName:", clipName); // ADDED LOG
+      const now = Date.now();
+      if (now - lastHitTime < hitDebounceInterval) {
+        console.log("Debounced hit animation call");
+        return; // Ignore this call
+      }
+
+      console.log("playHitAnimation called with clipName:", clipName);
       mixer.clipAction(jabCrossClip).stop();
-      
+
       const hitClip = gltf.animations.find(clip => clip.name === clipName);
       if (hitClip) {
-        console.log("Found hitClip:", clipName); // ADDED LOG
+        console.log("Found hitClip:", clipName);
         const hitAction = mixer.clipAction(hitClip);
         hitAction.loop = THREE.LoopOnce;
         hitAction.clampWhenFinished = true;
-        hitAction.timeScale = 3;
-        hitAction.play();
-        hitAction.reset().play();
-    
+        hitAction.timeScale = 1; // Set timeScale to 1
+        hitAction.reset().play(); // Reset and then play
+
         hitAction.addEventListener('finished', function () {
           mixer.clipAction(jabCrossClip).reset().play();
         });
       }
       else {
-        console.log("Hit clip not found:", clipName); // ADDED LOG
+        console.log("Hit clip not found:", clipName);
       }
+
+      lastHitTime = now;
     }
 
     // Initialize RAPIER and then set up the physics world

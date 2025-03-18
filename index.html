@@ -84,6 +84,29 @@
     directionalLight.castShadow = true;
     scene.add(directionalLight);
 
+    function playHitAnimation(clipName, jabCrossClip, mixer, gltf) {
+      console.log("playHitAnimation called with clipName:", clipName); // ADDED LOG
+      mixer.clipAction(jabCrossClip).stop();
+      
+      const hitClip = gltf.animations.find(clip => clip.name === clipName);
+      if (hitClip) {
+        console.log("Found hitClip:", clipName); // ADDED LOG
+        const hitAction = mixer.clipAction(hitClip);
+        hitAction.loop = THREE.LoopOnce;
+        hitAction.clampWhenFinished = true;
+        hitAction.timeScale = 3;
+        hitAction.play();
+        hitAction.reset().play();
+    
+        hitAction.addEventListener('finished', function () {
+          mixer.clipAction(jabCrossClip).reset().play();
+        });
+      }
+      else {
+        console.log("Hit clip not found:", clipName); // ADDED LOG
+      }
+    }
+
     // Initialize RAPIER and then set up the physics world
     RAPIER.init().then(() => {
       // -------------------- RAPIER PHYSICS SETUP --------------------
@@ -281,15 +304,23 @@
               const gloveSideName = glove[0];
               const { body: gloveBody, collider: gloveCollider } = glove[1];
 
+              console.log("Collision detected with hitbox:", hitboxName); // ADDED LOG
+
               if (hitboxName==="Hit_Head" || hitboxName==="Hit_Neck") {
+                console.log("Calling playHitAnimation for Head Hit"); // ADDED LOG
                 playHitAnimation('Head Hit', jabCrossClip, mixer, gltf);
               }
               else if (hitboxName==="Hit_Torso") {
+                console.log("Calling playHitAnimation for Receive Stomach Uppercut"); // ADDED LOG
                 playHitAnimation('Receive Stomach Uppercut', jabCrossClip, mixer, gltf);
               }
               else if (hitboxName.endsWith("Leg")) {
+                console.log("Calling playHitAnimation for Ginga Backward"); // ADDED LOG
                 playHitAnimation('Ginga Backward', jabCrossClip, mixer, gltf);
               }
+            }
+            else {
+              console.log("No glove found for collision"); // ADDED LOG
             }
           }
         });
@@ -329,29 +360,6 @@
 
       renderer.setAnimationLoop(render);
     });
-
-    function playHitAnimation(clipName, jabCrossClip, mixer, gltf) {
-      console.log("playHitAnimation called with clipName:", clipName); // ADDED LOG
-      mixer.clipAction(jabCrossClip).stop();
-      
-      const hitClip = gltf.animations.find(clip => clip.name === clipName);
-      if (hitClip) {
-        console.log("Found hitClip:", clipName); // ADDED LOG
-        const hitAction = mixer.clipAction(hitClip);
-        hitAction.loop = THREE.LoopOnce;
-        hitAction.clampWhenFinished = true;
-        hitAction.timeScale = 3;
-        hitAction.play();
-        hitAction.reset().play();
-    
-        hitAction.addEventListener('finished', function () {
-          mixer.clipAction(jabCrossClip).reset().play();
-        });
-      }
-      else {
-        console.log("Hit clip not found:", clipName); // ADDED LOG
-      }
-    }
   </script>
 </body>
 </html>

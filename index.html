@@ -52,211 +52,142 @@
       console.error("WebXR not available on this device/browser.");
     }
 
-    // -------------------- THREE.JS SETUP --------------------
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.xr.enabled = true;
-    renderer.setClearColor(0x000000, 0);
-    renderer.shadowMap.enabled = true;
-    document.body.appendChild(renderer.domElement);
 
-    const scene = new THREE.Scene();
-    scene.background = null;
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-    scene.add(camera);
+    function placeModelOnFloor(floor) {
+      if (modelParent) {
+        modelParent.visible = true;
+        // Set the boxer's position with an offset
+        const spawnOffset = new THREE.Vector3(0, 0, -2); // Offset of 2 meters in the negative Z direction
+        modelParent.position.copy(floor.position).add(spawnOffset);
+        modelParent.scale.set(250, 250, 250);
 
-    window.addEventListener("resize", () => {
-      if (!renderer.xr.getSession()) {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      }
-    });
-
-    const ratk = new RealityAccelerator(renderer.xr, { environmentRendering: true });
-    scene.add(ratk.root);
-    ratk.root.visible = false;
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
-    scene.add(ambientLight);
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    directionalLight.position.set(1, 1, 1);
-    directionalLight.castShadow = true;
-    scene.add(directionalLight);
-
-    let hitAnimationPlaying = false;
-
-    function playHitAnimation(clipName, jabCrossClip, mixer, gltf) {
-      console.log("playHitAnimation called with clipName:", clipName);
-      mixer.clipAction(jabCrossClip).stop();
-
-      const hitClip = gltf.animations.find(clip => clip.name === clipName);
-      if (hitClip) {
-        hitAnimationPlaying = true;
-        console.log("Found hitClip:", clipName);
-        const hitAction = mixer.clipAction(hitClip);
-        hitAction.loop = THREE.LoopOnce;
-        hitAction.clampWhenFinished = true;
-        hitAction.timeScale = 1; // Set timeScale to 1
-        hitAction.reset().play(); // Reset and then play
-
-        hitAction.addEventListener('finished', function () {
-          mixer.clipAction(jabCrossClip).reset().play();
-          hitAnimationPlaying = false;
-        });
-      }
-      else {
-        console.log("Hit clip not found:", clipName);
+        // Emit an event to signal that the scene is ready for collision events
+        eventBus.emit('sceneReady');
       }
     }
 
-    // Initialize RAPIER and then set up the physics world
-    RAPIER.init().then(() => {
-      // -------------------- RAPIER PHYSICS SETUP --------------------
-      // Create a physics world with zero gravity (since we're only using collision detection)
-      const gravity = { x: 0, y: 0, z: 0 };
-      const physicsWorld = new RAPIER.World(gravity);
-      // Create an event queue to capture collision events
-      const eventQueue = new RAPIER.EventQueue(true);
-
-      // Store mappings for glove and hitbox colliders
-      const glovePhysics = {}; // side: { body, collider }
-      const hitboxPhysics = {}; // keyed by hitbox name
-      const colliderToHitbox = {}; // collider handle to hitbox name
-
-      // Add the debugger
-      const debuggerInstance = new Debugger(physicsWorld);
-      debuggerInstance.enable(); // Enable debugger initially
-      scene.add(debuggerInstance);
-
-      // -------------------- LOAD HAND MODELS & ADD GLOVE COLLIDERS --------------------
-      let handModels = {};
-      const handLoader = new GLTFLoader();
-      const controller1 = renderer.xr.getController(0);
-      const controller2 = renderer.xr.getController(1);
-      scene.add(controller1, controller2);
-
-      function loadHandModel(controller, side, modelPath) {
-        handLoader.load(modelPath, (gltf) => {
-          const handModel = gltf.scene;
-          handModel.scale.set(0.2, 0.2, 0.2);
-          controller.add(handModel);
-          handModels[side] = handModel;
-          // Create a kinematic rigid body for the glove
-          const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
-          const body = physicsWorld.createRigidBody(bodyDesc);
-          // Create a simple spherical collider (adjust radius as needed)
-          const colliderDesc = RAPIER.ColliderDesc.ball(0.1).setSensor(true);
-          const collider = physicsWorld.createCollider(colliderDesc, body);
-          glovePhysics[side] = { body, collider };
-        });
+    ratk.onPlaneAdded = (plane) => {
+      if (plane.semanticLabel === 'floor') {
+        placeModelOnFloor(plane.planeMesh);
       }
+    };
 
-      loadHandModel(controller1, 'left', 'left_glove.glb');
-      loadHandModel(controller2, 'right', 'right_glove.glb');
+    document.getElementById('ar-button').addEventListener('click', async () => {
+      try {
+        const session = await navigator.xr.requestSession('immersive-ar', {
+          requiredFeatures: ['local-floor', 'hit-test', 'plane-detection', 'anchors'],
+          optionalFeatures: ['mesh-detection']
+        });
+        renderer.xr.setReferenceSpaceType('local-floor');
+        renderer.xr.setSession(session);
 
-      // -------------------- LOAD THE BOXER & ADD HITBOX COLLIDERS --------------------
-      let model, mixer, modelParent, boxerGltf, jabCrossClip;
-      const loader = new GLTFLoader();
-      loader.load('boxer.glb', (gltf) => {
-        boxerGltf = gltf;
-        model = gltf.scene;
-        modelParent = new THREE.Object3D();
-        modelParent.add(model);
-        scene.add(modelParent);
+        // -------------------- THREE.JS SETUP --------------------
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.xr.enabled = true;
+        renderer.setClearColor(0x000000, 0);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
 
-        // Traverse the model: hide hitboxes and set up materials for the rest.
-        model.traverse((node) => {
-          if (node.isMesh) {
-            if (node.name.startsWith('Hit')) {
-              // Hide the visual mesh
-              node.visible = false;
-              // *** FIX APPLIED: Create a dynamic rigid body for hitboxes ***
-              const bodyDesc = RAPIER.RigidBodyDesc.dynamic();
-              const body = physicsWorld.createRigidBody(bodyDesc);
-              // Compute bounding box for the hitbox mesh
-              node.geometry.computeBoundingBox();
-              const bbox = node.geometry.boundingBox;
-              const size = new THREE.Vector3();
-              bbox.getSize(size);
-              // Rapier expects half-extents; adjust as needed.
-              const hx = (size.x / 2) * 0.1;
-              const hy = (size.y / 2) * 0.1;
-              const hz = (size.z / 2) * 0.1;
-              // Create a cuboid collider matching the bounding box
-              const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
-                // (Optionally, you can set the collider as sensor if needed)
-                // .setSensor(true);
-                .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
-              // Position the collider at the mesh's center in local space
-              const center = new THREE.Vector3();
-              bbox.getCenter(center);
-              colliderDesc.setTranslation(center.x, center.y, center.z);
-              const collider = physicsWorld.createCollider(colliderDesc, body);
-              // Store a mapping from collider handle to hitbox name
-              hitboxPhysics[node.name] = { body, collider };
-              colliderToHitbox[collider.handle] = node.name;
-            } else {
-              node.material.side = THREE.DoubleSide;
-              node.material = new THREE.MeshStandardMaterial({
-                map: node.material.map,
-                color: node.material.color || new THREE.Color(0xffffff),
-                metalness: 0.5,
-                roughness: 0.5
-              });
-              node.castShadow = true;
-              node.receiveShadow = true;
-            }
+        const scene = new THREE.Scene();
+        scene.background = null;
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+        scene.add(camera);
+
+        window.addEventListener("resize", () => {
+          if (!renderer.xr.getSession()) {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
           }
         });
 
-        modelParent.visible = false;
+        const ratk = new RealityAccelerator(renderer.xr, { environmentRendering: true });
+        scene.add(ratk.root);
+        ratk.root.visible = false;
 
-        mixer = new THREE.AnimationMixer(model);
-        // Log the names of all animations
-        gltf.animations.forEach(clip => {
-          console.log('Animation Clip Name:', clip.name);
-        });
-        jabCrossClip = gltf.animations.find(clip => clip.name === 'Jab Cross');
-        if (jabCrossClip) {
-          const action = mixer.clipAction(jabCrossClip);
-          action.loop = THREE.LoopRepeat;
-          action.play();
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        directionalLight.position.set(1, 1, 1);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+
+        let hitAnimationPlaying = false;
+
+        function playHitAnimation(clipName, jabCrossClip, mixer, gltf) {
+          console.log("playHitAnimation called with clipName:", clipName);
+          mixer.clipAction(jabCrossClip).stop();
+
+          const hitClip = gltf.animations.find(clip => clip.name === clipName);
+          if (hitClip) {
+            hitAnimationPlaying = true;
+            console.log("Found hitClip:", clipName);
+            const hitAction = mixer.clipAction(hitClip);
+            hitAction.loop = THREE.LoopOnce;
+            hitAction.clampWhenFinished = true;
+            hitAction.timeScale = 1; // Set timeScale to 1
+            hitAction.reset().play(); // Reset and then play
+
+            hitAction.addEventListener('finished', function () {
+              mixer.clipAction(jabCrossClip).reset().play();
+              hitAnimationPlaying = false;
+            });
+          }
+          else {
+            console.log("Hit clip not found:", clipName);
+          }
         }
-      });
 
-      function placeModelOnFloor(floor) {
-        if (modelParent) {
-          modelParent.visible = true;
-          // Set the boxer's position with an offset
-          const spawnOffset = new THREE.Vector3(0, 0, -2); // Offset of 2 meters in the negative Z direction
-          modelParent.position.copy(floor.position).add(spawnOffset);
-          modelParent.scale.set(250, 250, 250);
+        // Initialize RAPIER and then set up the physics world
+        RAPIER.init().then(() => {
+          // -------------------- RAPIER PHYSICS SETUP --------------------
+          // Create a physics world with zero gravity (since we're only using collision detection)
+          const gravity = { x: 0, y: 0, z: 0 };
+          const physicsWorld = new RAPIER.World(gravity);
+          // Create an event queue to capture collision events
+          const eventQueue = new RAPIER.EventQueue(true);
 
-          // Emit an event to signal that the scene is ready for collision events
-          eventBus.emit('sceneReady');
-        }
-      }
+          // Store mappings for glove and hitbox colliders
+          const glovePhysics = {}; // side: { body, collider }
+          const hitboxPhysics = {}; // keyed by hitbox name
+          const colliderToHitbox = {}; // collider handle to hitbox name
 
-      ratk.onPlaneAdded = (plane) => {
-        if (plane.semanticLabel === 'floor') {
-          placeModelOnFloor(plane.planeMesh);
-        }
-      };
+          // Add the debugger
+          const debuggerInstance = new Debugger(physicsWorld);
+          debuggerInstance.enable(); // Enable debugger initially
+          scene.add(debuggerInstance);
 
-      document.getElementById('ar-button').addEventListener('click', async () => {
-        try {
-          const session = await navigator.xr.requestSession('immersive-ar', {
-            requiredFeatures: ['local-floor', 'hit-test', 'plane-detection', 'anchors'],
-            optionalFeatures: ['mesh-detection']
-          });
-          renderer.xr.setReferenceSpaceType('local-floor');
-          renderer.xr.setSession(session);
+          // -------------------- LOAD HAND MODELS & ADD GLOVE COLLIDERS --------------------
+          let handModels = {};
+          const handLoader = new GLTFLoader();
+          const controller1 = renderer.xr.getController(0);
+          const controller2 = renderer.xr.getController(1);
+          scene.add(controller1, controller2);
+
+          function loadHandModel(controller, side, modelPath) {
+            handLoader.load(modelPath, (gltf) => {
+              const handModel = gltf.scene;
+              handModel.scale.set(0.2, 0.2, 0.2);
+              controller.add(handModel);
+              handModels[side] = handModel;
+              // Create a kinematic rigid body for the glove
+              const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
+              const body = physicsWorld.createRigidBody(bodyDesc);
+              // Create a simple spherical collider (adjust radius as needed)
+              const colliderDesc = RAPIER.ColliderDesc.ball(0.1).setSensor(true);
+              const collider = physicsWorld.createCollider(colliderDesc, body);
+              glovePhysics[side] = { body, collider };
+            });
+          }
+
+          loadHandModel(controller1, 'left', 'left_glove.glb');
+          loadHandModel(controller2, 'right', 'right_glove.glb');
 
           // -------------------- LOAD THE BOXER & ADD HITBOX COLLIDERS --------------------
           let model, mixer, modelParent, boxerGltf, jabCrossClip;
@@ -327,139 +258,138 @@
               action.play();
             }
           });
+        });
 
-        } catch (err) {
-          console.error("Failed to start AR session", err);
-        }
-      });
+        // -------------------- RENDER LOOP & PHYSICS STEP --------------------
+        const clock = new THREE.Clock();
+        let collisionEventsEnabled = false; // Flag to control collision events
 
-      // -------------------- RENDER LOOP & PHYSICS STEP --------------------
-      const clock = new THREE.Clock();
-      let collisionEventsEnabled = false; // Flag to control collision events
+        // Listen for the sceneReady event
+        eventBus.on('sceneReady', () => {
+          collisionEventsEnabled = true;
+          console.log("Scene ready! Collision events enabled.");
+        });
 
-      // Listen for the sceneReady event
-      eventBus.on('sceneReady', () => {
-        collisionEventsEnabled = true;
-        console.log("Scene ready! Collision events enabled.");
-      });
+        function render(timestamp, frame) {
+          const delta = clock.getDelta();
+          if (mixer) mixer.update(delta);
+          ratk.update();
 
-      function render(timestamp, frame) {
-        const delta = clock.getDelta();
-        if (mixer) mixer.update(delta);
-        ratk.update();
+          // Update glove collider positions from their controllers.
+          for (const side in glovePhysics) {
+            const { body } = glovePhysics[side];
+            // Get the controller's world position.
+            const controller = side === 'left' ? controller1 : controller2;
+            const position = new THREE.Vector3();
+            controller.getWorldPosition(position);
+            // Update the kinematic body.
+            body.setNextKinematicTranslation({ x: position.x, y: position.y, z: position.z });
+          }
 
-        // Update glove collider positions from their controllers.
-        for (const side in glovePhysics) {
-          const { body } = glovePhysics[side];
-          // Get the controller's world position.
-          const controller = side === 'left' ? controller1 : controller2;
-          const position = new THREE.Vector3();
-          controller.getWorldPosition(position);
-          // Update the kinematic body.
-          body.setNextKinematicTranslation({ x: position.x, y: position.y, z: position.z });
-        }
+          // Update boxer hitbox positions:
+          if (modelParent && modelParent.visible) {
+            modelParent.traverse((node) => {
+              if (node.isMesh && node.name.startsWith('Hit')) {
+                // Compute the node's world position.
+                const worldPos = new THREE.Vector3();
+                node.getWorldPosition(worldPos);
+                const { body } = hitboxPhysics[node.name];
+                // For dynamic bodies, we manually override their transform and zero their velocity.
+                body.setTranslation({ x: worldPos.x, y: worldPos.y, z: worldPos.z }, true);
+                body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+              }
+            });
+          }
 
-        // Update boxer hitbox positions:
-        if (modelParent && modelParent.visible) {
-          modelParent.traverse((node) => {
-            if (node.isMesh && node.name.startsWith('Hit')) {
-              // Compute the node's world position.
-              const worldPos = new THREE.Vector3();
-              node.getWorldPosition(worldPos);
-              const { body } = hitboxPhysics[node.name];
-              // For dynamic bodies, we manually override their transform and zero their velocity.
-              body.setTranslation({ x: worldPos.x, y: worldPos.y, z: worldPos.z }, true);
-              body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-            }
-          });
-        }
+          // Process collision events.
+          if (collisionEventsEnabled) {
+            physicsWorld.step(eventQueue);
+            eventQueue.drainCollisionEvents((handle1, handle2, started) => {
+              // Retrieve the hitbox name from the handle
+              const hitboxName1 = colliderToHitbox[handle1];
+              const hitboxName2 = colliderToHitbox[handle2];
 
-        // Process collision events.
-        if (collisionEventsEnabled) {
-          physicsWorld.step(eventQueue);
-          eventQueue.drainCollisionEvents((handle1, handle2, started) => {
-            // Retrieve the hitbox name from the handle
-            const hitboxName1 = colliderToHitbox[handle1];
-            const hitboxName2 = colliderToHitbox[handle2];
+              if (hitboxName1 || hitboxName2) {
+                const hitboxName = hitboxName1 || hitboxName2;
+                // Retrieve the hitbox's body and collider
+                const { body, collider } = hitboxPhysics[hitboxName];
 
-            if (hitboxName1 || hitboxName2) {
-              const hitboxName = hitboxName1 || hitboxName2;
-              // Retrieve the hitbox's body and collider
-              const { body, collider } = hitboxPhysics[hitboxName];
+                // Determine which side is the glove
+                const gloveSide = hitboxName1 ? handle2 : handle1;
+                const glove = Object.entries(glovePhysics).find(([side, { collider }]) => collider.handle === gloveSide);
 
-              // Determine which side is the glove
-              const gloveSide = hitboxName1 ? handle2 : handle1;
-              const glove = Object.entries(glovePhysics).find(([side, { collider }]) => collider.handle === gloveSide);
+                if (glove) {
+                  const gloveSideName = glove[0];
+                  const { body: gloveBody, collider: gloveCollider } = glove[1];
 
-              if (glove) {
-                const gloveSideName = glove[0];
-                const { body: gloveBody, collider: gloveCollider } = glove[1];
+                  console.log("Collision detected with hitbox:", hitboxName); // ADDED LOG
 
-                console.log("Collision detected with hitbox:", hitboxName); // ADDED LOG
+                  if (hitboxName === "Hit_Head" || hitboxName === "Hit_Neck") {
+                    console.log("Calling playHitAnimation for Head Hit"); // ADDED LOG
+                    if (!hitAnimationPlaying) { // ADD THIS CHECK
+                      if (boxerGltf && jabCrossClip) {
+                        playHitAnimation('Head Hit', jabCrossClip, mixer, boxerGltf);
+                      } else {
+                        console.error("Animation resources not ready yet.");
+                      }
 
-                if (hitboxName === "Hit_Head" || hitboxName === "Hit_Neck") {
-                  console.log("Calling playHitAnimation for Head Hit"); // ADDED LOG
-                  if (!hitAnimationPlaying) { // ADD THIS CHECK
-                    if (boxerGltf && jabCrossClip) {
-                      playHitAnimation('Head Hit', jabCrossClip, mixer, boxerGltf);
                     } else {
-                      console.error("Animation resources not ready yet.");
+                      console.log("Hit animation already playing, skipping.");
                     }
-
-                  } else {
-                    console.log("Hit animation already playing, skipping.");
+                  }
+                  else if (hitboxName === "Hit_Torso") {
+                    console.log("Calling playHitAnimation for Receive Stomach Uppercut"); // ADDED LOG
+                    playHitAnimation('Receive Stomach Uppercut', jabCrossClip, mixer, boxerGltf);
+                  }
+                  else if (hitboxName.endsWith("Leg")) {
+                    console.log("Calling playHitAnimation for Ginga Backward"); // ADDED LOG
+                    playHitAnimation('Ginga Backward', jabCrossClip, mixer, boxerGltf);
                   }
                 }
-                else if (hitboxName === "Hit_Torso") {
-                  console.log("Calling playHitAnimation for Receive Stomach Uppercut"); // ADDED LOG
-                  playHitAnimation('Receive Stomach Uppercut', jabCrossClip, mixer, boxerGltf);
-                }
-                else if (hitboxName.endsWith("Leg")) {
-                  console.log("Calling playHitAnimation for Ginga Backward"); // ADDED LOG
-                  playHitAnimation('Ginga Backward', jabCrossClip, mixer, boxerGltf);
+                else {
+                  console.log("No glove found for collision"); // ADDED LOG
                 }
               }
-              else {
-                console.log("No glove found for collision"); // ADDED LOG
-              }
-            }
-          });
-        }
-
-        // Ensure the boxer faces the player.
-        if (modelParent && modelParent.visible) {
-          const playerPosition = new THREE.Vector3();
-          if (renderer.xr.isPresenting && frame) {
-            const referenceSpace = renderer.xr.getReferenceSpace();
-            const viewerPose = frame.getViewerPose(referenceSpace);
-            if (viewerPose) {
-              const { x, y, z } = viewerPose.views[0].transform.position;
-              playerPosition.set(x, y, z);
-            }
-          } else {
-            camera.getWorldPosition(playerPosition);
+            });
           }
-          const direction = new THREE.Vector3(
-            playerPosition.x - modelParent.position.x,
-            0,
-            playerPosition.z - modelParent.position.z
-          ).normalize();
-          const angle = Math.atan2(direction.x, direction.z);
-          modelParent.rotation.set(0, angle, 0);
+
+          // Ensure the boxer faces the player.
+          if (modelParent && modelParent.visible) {
+            const playerPosition = new THREE.Vector3();
+            if (renderer.xr.isPresenting && frame) {
+              const referenceSpace = renderer.xr.getReferenceSpace();
+              const viewerPose = frame.getViewerPose(referenceSpace);
+              if (viewerPose) {
+                const { x, y, z } = viewerPose.views[0].transform.position;
+                playerPosition.set(x, y, z);
+              }
+            } else {
+              camera.getWorldPosition(playerPosition);
+            }
+            const direction = new THREE.Vector3(
+              playerPosition.x - modelParent.position.x,
+              0,
+              playerPosition.z - modelParent.position.z
+            ).normalize();
+            const angle = Math.atan2(direction.x, direction.z);
+            modelParent.rotation.set(0, angle, 0);
+          }
+
+          directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2));
+          directionalLight.lookAt(modelParent ? modelParent.position : scene.position);
+
+          // Update the debugger
+          if (debuggerInstance && debuggerInstance.isEnabled()) {
+            debuggerInstance.update();
+          }
+
+          renderer.render(scene, camera);
         }
 
-        directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2));
-        directionalLight.lookAt(modelParent ? modelParent.position : scene.position);
-
-        // Update the debugger
-        if (debuggerInstance && debuggerInstance.isEnabled()) {
-          debuggerInstance.update();
-        }
-
-        renderer.render(scene, camera);
+        renderer.setAnimationLoop(render);
+      } catch (error) {
+        console.error("An error occurred:", error);
       }
-
-      renderer.setAnimationLoop(render);
     });
   </script>
 </body>

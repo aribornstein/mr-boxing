@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,10 +11,12 @@
       overflow: hidden;
       background: none;
     }
+
     canvas {
       display: block;
       background: none;
     }
+
     #ar-button {
       position: absolute;
       bottom: 20px;
@@ -33,6 +36,7 @@
     }
   </script>
 </head>
+
 <body>
   <button id="ar-button">Enter AR</button>
 
@@ -84,21 +88,15 @@
     directionalLight.castShadow = true;
     scene.add(directionalLight);
 
-    let lastHitTime = 0;
-    const hitDebounceInterval = 500; // milliseconds
+    let hitAnimationPlaying = false;
 
     function playHitAnimation(clipName, jabCrossClip, mixer, gltf) {
-      const now = Date.now();
-      if (now - lastHitTime < hitDebounceInterval) {
-        console.log("Debounced hit animation call");
-        return; // Ignore this call
-      }
-
       console.log("playHitAnimation called with clipName:", clipName);
       mixer.clipAction(jabCrossClip).stop();
 
       const hitClip = gltf.animations.find(clip => clip.name === clipName);
       if (hitClip) {
+        hitAnimationPlaying = true;
         console.log("Found hitClip:", clipName);
         const hitAction = mixer.clipAction(hitClip);
         hitAction.loop = THREE.LoopOnce;
@@ -108,13 +106,12 @@
 
         hitAction.addEventListener('finished', function () {
           mixer.clipAction(jabCrossClip).reset().play();
+          hitAnimationPlaying = false;
         });
       }
       else {
         console.log("Hit clip not found:", clipName);
       }
-
-      lastHitTime = now;
     }
 
     // Initialize RAPIER and then set up the physics world
@@ -316,17 +313,26 @@
 
               console.log("Collision detected with hitbox:", hitboxName); // ADDED LOG
 
-              if (hitboxName==="Hit_Head" || hitboxName==="Hit_Neck") {
+              if (hitboxName === "Hit_Head" || hitboxName === "Hit_Neck") {
                 console.log("Calling playHitAnimation for Head Hit"); // ADDED LOG
-                playHitAnimation('Head Hit', jabCrossClip, mixer, gltf);
+                if (!hitAnimationPlaying) { // ADD THIS CHECK
+                  if (model && jabCrossClip) {
+                    playHitAnimation('Head Hit', jabCrossClip, mixer, model);
+                  } else {
+                    console.error("Animation resources not ready yet.");
+                  }
+
+                } else {
+                  console.log("Hit animation already playing, skipping.");
+                }
               }
-              else if (hitboxName==="Hit_Torso") {
+              else if (hitboxName === "Hit_Torso") {
                 console.log("Calling playHitAnimation for Receive Stomach Uppercut"); // ADDED LOG
-                playHitAnimation('Receive Stomach Uppercut', jabCrossClip, mixer, gltf);
+                playHitAnimation('Receive Stomach Uppercut', jabCrossClip, mixer, model);
               }
               else if (hitboxName.endsWith("Leg")) {
                 console.log("Calling playHitAnimation for Ginga Backward"); // ADDED LOG
-                playHitAnimation('Ginga Backward', jabCrossClip, mixer, gltf);
+                playHitAnimation('Ginga Backward', jabCrossClip, mixer, model);
               }
             }
             else {
@@ -372,4 +378,5 @@
     });
   </script>
 </body>
+
 </html>

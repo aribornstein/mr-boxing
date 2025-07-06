@@ -48,6 +48,7 @@ function preprocess(img, size=640) {
 async function loadYOLOModel(onnxURL) {
   if (!window.ort) {
     await import('https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js');
+    window.ort.env?.wasm?.numThreads && (window.ort.env.wasm.numThreads = 1);
   }
   const resp = await fetch(onnxURL);
   const buffer = await resp.arrayBuffer();
@@ -107,7 +108,6 @@ function triangulate(uL, uR, vL, fx=600, fy=600, cx=320, cy=240, baseline=0.065)
   return {x: X, y: Y, z: -Z};
 }
 
-// ---- Particle Helper ----
 function createParticleGroup(color = 0x00fffc, size = 0.18) {
   const group = new THREE.Group();
   const textureLoader = new THREE.TextureLoader();
@@ -128,51 +128,72 @@ function createParticleGroup(color = 0x00fffc, size = 0.18) {
   return group;
 }
 
+// Convert <video> to <img> for inference
+async function frameToImage(video) {
+  const c = document.createElement('canvas');
+  c.width = video.videoWidth; c.height = video.videoHeight;
+  c.getContext('2d').drawImage(video, 0, 0);
+  const img = new window.Image();
+  img.src = c.toDataURL();
+  return new Promise(res=>img.onload=()=>res(img));
+}
+
 /**
- * Main entry point for YOLO + stereo tracking + collider + particle visual integration.
+ * Main entry for YOLO + stereo tracking + collider + particle integration.
  * @param {object} options - see below.
  * @returns {object} { detectedObjectColliders, stop }
+ *
+ * To start tracking only on AR start, call setupTracking() only after your AR session begins.
+ * To stop, call the .stop() method.
+ *
+ * Set useStereoSessions to true for dual session stereo inference (optional, default false).
  */
 export function setupTracking({
   physicsWorld,
   RAPIER,
-  scene,               // <--- YOUR THREE.Scene instance!
+  scene,
   videoLeftElem,
   videoRightElem,
   onnxURL = 'yolo12nms.onnx',
-  minScore=0.7,
-  matchYThreshold=30,
-  fx=600, fy=600, cx=320, cy=240, baseline=0.065
+  minScore = 0.7,
+  matchYThreshold = 30,
+  fx = 600, fy = 600, cx = 320, cy = 240, baseline = 0.065,
+  useStereoSessions = false // set to true for parallel session inference
 }) {
-  const detectedObjectColliders = {}; // label => { body, collider, particleGroup }
+  const detectedObjectColliders = {};
   let trackingActive = false;
-  let yoloSession = null;
+  let sessions = [];
 
-  async function frameToImage(video) {
-    const c = document.createElement('canvas');
-    c.width = video.videoWidth; c.height = video.videoHeight;
-    c.getContext('2d').drawImage(video, 0, 0);
-    const img = new window.Image();
-    img.src = c.toDataURL();
-    return new Promise(res=>img.onload=()=>res(img));
+  async function init() {
+    const sessionA = await loadYOLOModel(onnxURL);
+    sessions = [sessionA];
+    if (useStereoSessions) {
+      const sessionB = await loadYOLOModel(onnxURL);
+      sessions.push(sessionB);
+    }
+    trackingActive = true;
+    trackingLoop();
   }
 
   async function trackingLoop() {
-    if (!trackingActive) return; // Prevent multiple loops
+    if (!trackingActive) return;
 
     try {
-      const [imgL, imgR] = await Promise.all([
-        frameToImage(videoLeftElem),
-        frameToImage(videoRightElem)
-      ]);
-      const [detsL, detsR] = await Promise.all([
-        runYOLO(yoloSession, imgL),
-        runYOLO(yoloSession, imgR)
-      ]);
+      // Sequential by default, safe for all ONNX runtimes
+      const imgL = await frameToImage(videoLeftElem);
+      const detsL = await runYOLO(sessions[0], imgL);
+
+      let detsR;
+      const imgR = await frameToImage(videoRightElem);
+      if (useStereoSessions && sessions[1]) {
+        detsR = await runYOLO(sessions[1], imgR);
+      } else {
+        detsR = await runYOLO(sessions[0], imgR); // still safe, just slower
+      }
+
       const matches = matchDetections(detsL, detsR, matchYThreshold);
 
       const currentLabels = new Set();
-
       matches.forEach(({label, left, right}) => {
         currentLabels.add(label);
         const [uL,vL] = getCenter(left.box);
@@ -181,7 +202,6 @@ export function setupTracking({
         if (!pos) return;
         const boxPx = left.box[2]-left.box[0], boxPy = left.box[3]-left.box[1];
         const size = {x: boxPx*Math.abs(pos.z)/fx, y: boxPy*Math.abs(pos.z)/fy, z: 0.08};
-
         let obj = detectedObjectColliders[label];
         if (!obj) {
           const body = physicsWorld.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
@@ -203,7 +223,7 @@ export function setupTracking({
         }
       });
 
-      // --- CLEANUP: remove colliders and particles no longer detected ---
+      // Remove old objects not in currentLabels
       Object.keys(detectedObjectColliders).forEach(label => {
         if (!currentLabels.has(label)) {
           const { body, collider, particleGroup } = detectedObjectColliders[label];
@@ -214,24 +234,18 @@ export function setupTracking({
         }
       });
 
-      setTimeout(() => trackingLoop(), 150);
     } catch (e) {
       console.error("Tracking error:", e);
-      setTimeout(() => trackingLoop(), 500);
+    } finally {
+      setTimeout(trackingLoop, 150);
     }
   }
 
-  // Load YOLO and start the loop, but never double-start:
-  loadYOLOModel(onnxURL).then(session => {
-    if (trackingActive) return; // Already running, do nothing
-    yoloSession = session;
-    trackingActive = true;
-    trackingLoop();
-  });
+  // Start only when called (e.g. after AR session starts)
+  init();
 
-  // Allow caller to stop tracking
   return {
     detectedObjectColliders,
-    stop: () => { trackingActive = false; }
+    stop: () => { trackingActive = false; sessions = []; }
   };
 }

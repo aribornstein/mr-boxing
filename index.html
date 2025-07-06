@@ -140,7 +140,7 @@
         alert("Need at least two cameras for stereo tracking!");
         throw new Error("Not enough cameras");
       }
-      const leftId = cams[0].deviceId, rightId = cams[1].deviceId;
+      const leftId = cams[1].deviceId, rightId = cams[2].deviceId;
       await startStereoCameras(videoLeft, videoRight, leftId, rightId);
 
       // Start YOLO stereo tracking (mutates objectPhysicsColliders)
@@ -377,4 +377,3 @@
   </script>
 </body>
 </html>
-  

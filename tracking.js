@@ -1,4 +1,3 @@
-// tracking.js
 import * as THREE from 'three';
 
 const coco_labels = [
@@ -132,7 +131,7 @@ function createParticleGroup(color = 0x00fffc, size = 0.18) {
 /**
  * Main entry point for YOLO + stereo tracking + collider + particle visual integration.
  * @param {object} options - see below.
- * @returns {object} detectedObjectColliders - always up-to-date with tracked objects.
+ * @returns {object} { detectedObjectColliders, stop }
  */
 export function setupTracking({
   physicsWorld,
@@ -146,6 +145,8 @@ export function setupTracking({
   fx=600, fy=600, cx=320, cy=240, baseline=0.065
 }) {
   const detectedObjectColliders = {}; // label => { body, collider, particleGroup }
+  let trackingActive = false;
+  let yoloSession = null;
 
   async function frameToImage(video) {
     const c = document.createElement('canvas');
@@ -156,7 +157,9 @@ export function setupTracking({
     return new Promise(res=>img.onload=()=>res(img));
   }
 
-  async function trackingLoop(yoloSession) {
+  async function trackingLoop() {
+    if (!trackingActive) return; // Prevent multiple loops
+
     try {
       const [imgL, imgR] = await Promise.all([
         frameToImage(videoLeftElem),
@@ -168,7 +171,6 @@ export function setupTracking({
       ]);
       const matches = matchDetections(detsL, detsR, matchYThreshold);
 
-      // Track current frame's active labels
       const currentLabels = new Set();
 
       matches.forEach(({label, left, right}) => {
@@ -187,7 +189,6 @@ export function setupTracking({
             RAPIER.ColliderDesc.cuboid(size.x/2, size.y/2, size.z/2).setSensor(true),
             body
           );
-          // --- Add Particle Effect! ---
           let color = 0x00fffc;
           if (label === 'sports ball') color = 0xffff00;
           else if (label === 'person') color = 0x3399ff;
@@ -195,7 +196,6 @@ export function setupTracking({
           scene.add(particleGroup);
           detectedObjectColliders[label] = { body, collider, particleGroup };
         }
-        // Update physics and visual position every frame
         detectedObjectColliders[label].body.setNextKinematicTranslation(pos);
         if (detectedObjectColliders[label].particleGroup) {
           detectedObjectColliders[label].particleGroup.position.set(pos.x, pos.y, pos.z);
@@ -214,18 +214,24 @@ export function setupTracking({
         }
       });
 
-      setTimeout(() => trackingLoop(yoloSession), 150);
+      setTimeout(() => trackingLoop(), 150);
     } catch (e) {
       console.error("Tracking error:", e);
-      setTimeout(() => trackingLoop(yoloSession), 500);
+      setTimeout(() => trackingLoop(), 500);
     }
   }
 
-  // Load the YOLO model and start the loop!
-  loadYOLOModel(onnxURL).then(yoloSession => {
-    trackingLoop(yoloSession);
+  // Load YOLO and start the loop, but never double-start:
+  loadYOLOModel(onnxURL).then(session => {
+    if (trackingActive) return; // Already running, do nothing
+    yoloSession = session;
+    trackingActive = true;
+    trackingLoop();
   });
 
-  // Expose colliders so you can check for collisions in main code:
-  return detectedObjectColliders;
+  // Allow caller to stop tracking
+  return {
+    detectedObjectColliders,
+    stop: () => { trackingActive = false; }
+  };
 }

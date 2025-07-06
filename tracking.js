@@ -10,11 +10,11 @@ const coco_labels = [
   'refrigerator','book','clock','vase','scissors','teddy bear','hair drier','toothbrush'
 ];
 
+// Camera utilities...
 export async function enumerateCameras() {
   const devices = await navigator.mediaDevices.enumerateDevices();
   return devices.filter(d => d.kind === "videoinput");
 }
-
 export async function startStereoCameras(videoLeftElem, videoRightElem, leftId, rightId) {
   const streamLeft = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: leftId } } });
   const streamRight = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: rightId } } });
@@ -23,6 +23,7 @@ export async function startStereoCameras(videoLeftElem, videoRightElem, leftId, 
   return [streamLeft, streamRight];
 }
 
+// Preprocess for YOLO model
 function preprocess(img, size=640) {
   const canvas = document.createElement('canvas');
   canvas.width = size; canvas.height = size;
@@ -34,7 +35,6 @@ function preprocess(img, size=640) {
   ctx.fillStyle = "#808080";
   ctx.fillRect(0, 0, size, size);
   ctx.drawImage(img, dx, dy, newW, newH);
-
   const imageData = ctx.getImageData(0, 0, size, size).data;
   const floatArray = new Float32Array(size * size * 3);
   for (let i = 0; i < size * size; ++i) {
@@ -45,17 +45,21 @@ function preprocess(img, size=640) {
   return new window.ort.Tensor('float32', floatArray, [1, 3, size, size]);
 }
 
+// Load ONNX model (using global `ort`)
 async function loadYOLOModel(onnxURL) {
-  if (!window.ort) {
-    await import('https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js');
-    window.ort.env?.wasm?.numThreads && (window.ort.env.wasm.numThreads = 1);
+  // Wait until ort is loaded (from HTML)
+  while (!window.ort) {
+    await new Promise(res => setTimeout(res, 30));
   }
+  // Optional: tweak WASM threading for Quest
+  window.ort.env?.wasm?.numThreads && (window.ort.env.wasm.numThreads = 1);
   const resp = await fetch(onnxURL);
   const buffer = await resp.arrayBuffer();
   const session = await window.ort.InferenceSession.create(buffer, { executionProviders: ['wasm'] });
   return session;
 }
 
+// YOLO inference
 async function runYOLO(session, img) {
   const tensor = preprocess(img, 640);
   const feeds = {}; feeds[session.inputNames[0]] = tensor;
@@ -75,10 +79,12 @@ async function runYOLO(session, img) {
   return detections;
 }
 
+// Utility: center of bbox
 function getCenter(box) {
   return [ (box[0]+box[2])/2, (box[1]+box[3])/2 ];
 }
 
+// Match detections L/R (by vertical Y position, crude stereo match)
 function matchDetections(left, right, yThreshold=30) {
   let matches = [];
   right = [...right];
@@ -99,6 +105,7 @@ function matchDetections(left, right, yThreshold=30) {
   return matches;
 }
 
+// Stereo triangulation
 function triangulate(uL, uR, vL, fx=600, fy=600, cx=320, cy=240, baseline=0.065) {
   const disparity = uL - uR;
   if (!disparity) return null;
@@ -108,6 +115,14 @@ function triangulate(uL, uR, vL, fx=600, fy=600, cx=320, cy=240, baseline=0.065)
   return {x: X, y: Y, z: -Z};
 }
 
+// -- Debug marker, visible always (fallback if sprites are invisible)
+function createDebugMarker(color = 0xff00ff, size = 0.1) {
+  const geometry = new THREE.SphereGeometry(size, 16, 16);
+  const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.77 });
+  return new THREE.Mesh(geometry, material);
+}
+
+// Optional: particles (may be invisible on Quest, so use marker above)
 function createParticleGroup(color = 0x00fffc, size = 0.18) {
   const group = new THREE.Group();
   const textureLoader = new THREE.TextureLoader();
@@ -128,7 +143,7 @@ function createParticleGroup(color = 0x00fffc, size = 0.18) {
   return group;
 }
 
-// Convert <video> to <img> for inference
+// Frame capture for inference
 async function frameToImage(video) {
   const c = document.createElement('canvas');
   c.width = video.videoWidth; c.height = video.videoHeight;
@@ -139,14 +154,9 @@ async function frameToImage(video) {
 }
 
 /**
- * Main entry for YOLO + stereo tracking + collider + particle integration.
+ * Main entry for YOLO + stereo tracking + collider + debug marker integration.
  * @param {object} options - see below.
  * @returns {object} { detectedObjectColliders, stop }
- *
- * To start tracking only on AR start, call setupTracking() only after your AR session begins.
- * To stop, call the .stop() method.
- *
- * Set useStereoSessions to true for dual session stereo inference (optional, default false).
  */
 export function setupTracking({
   physicsWorld,
@@ -177,9 +187,7 @@ export function setupTracking({
 
   async function trackingLoop() {
     if (!trackingActive) return;
-
     try {
-      // Sequential by default, safe for all ONNX runtimes
       const imgL = await frameToImage(videoLeftElem);
       const detsL = await runYOLO(sessions[0], imgL);
 
@@ -202,6 +210,7 @@ export function setupTracking({
         if (!pos) return;
         const boxPx = left.box[2]-left.box[0], boxPy = left.box[3]-left.box[1];
         const size = {x: boxPx*Math.abs(pos.z)/fx, y: boxPy*Math.abs(pos.z)/fy, z: 0.08};
+
         let obj = detectedObjectColliders[label];
         if (!obj) {
           const body = physicsWorld.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
@@ -209,27 +218,31 @@ export function setupTracking({
             RAPIER.ColliderDesc.cuboid(size.x/2, size.y/2, size.z/2).setSensor(true),
             body
           );
-          let color = 0x00fffc;
+          let color = 0xff00ff; // default magenta for debug!
           if (label === 'sports ball') color = 0xffff00;
           else if (label === 'person') color = 0x3399ff;
-          const particleGroup = createParticleGroup(color, Math.max(size.x, size.y, 0.12));
-          scene.add(particleGroup);
-          detectedObjectColliders[label] = { body, collider, particleGroup };
+          // Always create marker for clarity
+          const marker = createDebugMarker(color, Math.max(size.x, size.y, 0.13));
+          scene.add(marker);
+          // Optionally, you can still add a particle group
+          // const particleGroup = createParticleGroup(color, Math.max(size.x, size.y, 0.12));
+          // scene.add(particleGroup);
+          detectedObjectColliders[label] = { body, collider, marker };
         }
         detectedObjectColliders[label].body.setNextKinematicTranslation(pos);
-        if (detectedObjectColliders[label].particleGroup) {
-          detectedObjectColliders[label].particleGroup.position.set(pos.x, pos.y, pos.z);
-          detectedObjectColliders[label].particleGroup.visible = true;
+        if (detectedObjectColliders[label].marker) {
+          detectedObjectColliders[label].marker.position.set(pos.x, pos.y, pos.z);
+          detectedObjectColliders[label].marker.visible = true;
         }
       });
 
       // Remove old objects not in currentLabels
       Object.keys(detectedObjectColliders).forEach(label => {
         if (!currentLabels.has(label)) {
-          const { body, collider, particleGroup } = detectedObjectColliders[label];
+          const { body, collider, marker } = detectedObjectColliders[label];
           physicsWorld.removeCollider(collider, true);
           physicsWorld.removeRigidBody(body);
-          if (particleGroup && scene) scene.remove(particleGroup);
+          if (marker && scene) scene.remove(marker);
           delete detectedObjectColliders[label];
         }
       });
@@ -237,7 +250,7 @@ export function setupTracking({
     } catch (e) {
       console.error("Tracking error:", e);
     } finally {
-      setTimeout(trackingLoop, 150);
+      setTimeout(trackingLoop, 400); // Not too often!
     }
   }
 

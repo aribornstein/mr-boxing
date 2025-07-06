@@ -1,22 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GLB Model on Floor with Rapier Physics</title>
   <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background: none;
-    }
-
-    canvas {
-      display: block;
-      background: none;
-    }
-
+    body { margin: 0; overflow: hidden; background: none; }
+    canvas { display: block; background: none; }
     #ar-button {
       position: absolute;
       bottom: 20px;
@@ -36,10 +26,8 @@
     }
   </script>
 </head>
-
 <body>
   <button id="ar-button">Enter AR</button>
-
   <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'GLTFLoader';
@@ -47,12 +35,13 @@
     import * as RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.14.0/rapier.es.js';
     import { Debugger } from './debugger.js';
     import { eventBus } from './eventBus.js';
+    import { enumerateCameras, startStereoCameras, setupTracking } from './tracking.js';
 
     if (!navigator.xr) {
       console.error("WebXR not available on this device/browser.");
     }
 
-    // -------------------- THREE.JS SETUP --------------------
+    // ----- THREE.JS SETUP -----
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -90,25 +79,20 @@
     scene.add(directionalLight);
 
     let hitAnimationPlaying = false;
-
     function playHitAnimation(clipName, jabCrossClip, mixer, gltf) {
       if (hitAnimationPlaying) {
         console.log("Hit animation already playing, skipping.");
         return;
       }
-      console.log("playHitAnimation called with clipName:", clipName);
       mixer.clipAction(jabCrossClip).stop();
-
       const hitClip = gltf.animations.find(clip => clip.name === clipName);
       if (hitClip) {
         hitAnimationPlaying = true;
-        console.log("Found hitClip:", clipName);
         const hitAction = mixer.clipAction(hitClip);
         hitAction.loop = THREE.LoopOnce;
         hitAction.clampWhenFinished = true;
-        hitAction.timeScale = 1; // Set timeScale to 1
-        hitAction.reset().play(); // Reset and then play
-
+        hitAction.timeScale = 1;
+        hitAction.reset().play();
         mixer.addEventListener('finished', (e) => {
           if (e.action === hitAction) {
             const action = mixer.clipAction(jabCrossClip).reset();
@@ -117,32 +101,60 @@
             hitAnimationPlaying = false;
           }
         });
-      }
-      else {
+      } else {
         console.log("Hit clip not found:", clipName);
       }
     }
 
-    // Initialize RAPIER and then set up the physics world
-    RAPIER.init().then(() => {
-      // -------------------- RAPIER PHYSICS SETUP --------------------
-      // Create a physics world with zero gravity (since we're only using collision detection)
+    // ---- RAPIER INIT & TRACKING ----
+    RAPIER.init().then(async () => {
+      // -- RAPIER PHYSICS --
       const gravity = { x: 0, y: 0, z: 0 };
       const physicsWorld = new RAPIER.World(gravity);
-      // Create an event queue to capture collision events
       const eventQueue = new RAPIER.EventQueue(true);
 
-      // Store mappings for glove and hitbox colliders
-      const glovePhysics = {}; // side: { body, collider }
-      const hitboxPhysics = {}; // keyed by hitbox name
-      const colliderToHitbox = {}; // collider handle to hitbox name
-
-      // Add the debugger
+      // ---- COLLIDER REGISTRIES ----
+      const glovePhysics = {};
+      const hitboxPhysics = {};
+      const objectPhysicsColliders = {}; // Tracked objects
+      const colliderToHitbox = {};
       const debuggerInstance = new Debugger(physicsWorld);
-      debuggerInstance.enable(); // Enable debugger initially
+      debuggerInstance.enable();
       scene.add(debuggerInstance);
 
-      // -------------------- LOAD HAND MODELS & ADD GLOVE COLLIDERS --------------------
+      // ---- TRACKING.JS SETUP ----
+      const videoLeft = document.createElement('video');
+      const videoRight = document.createElement('video');
+      videoLeft.setAttribute('autoplay', true);
+      videoLeft.setAttribute('playsinline', true);
+      videoLeft.style.display = 'none';
+      videoRight.setAttribute('autoplay', true);
+      videoRight.setAttribute('playsinline', true);
+      videoRight.style.display = 'none';
+      document.body.appendChild(videoLeft);
+      document.body.appendChild(videoRight);
+
+      // Enumerate and start cameras
+      const cams = await enumerateCameras();
+      if (cams.length < 2) {
+        alert("Need at least two cameras for stereo tracking!");
+        throw new Error("Not enough cameras");
+      }
+      const leftId = cams[0].deviceId, rightId = cams[1].deviceId;
+      await startStereoCameras(videoLeft, videoRight, leftId, rightId);
+
+      // Start YOLO stereo tracking (mutates objectPhysicsColliders)
+      setupTracking({
+        physicsWorld,
+        RAPIER,
+        scene,
+        videoLeftElem: videoLeft,
+        videoRightElem: videoRight,
+        onnxURL: 'yolo12nms.onnx',
+        objectPhysicsColliders // <-- live, always up to date!
+      });
+
+      // -- HAND MODELS & COLLIDERS --
       let handModels = {};
       const handLoader = new GLTFLoader();
       const controller1 = renderer.xr.getController(0);
@@ -155,10 +167,8 @@
           handModel.scale.set(0.2, 0.2, 0.2);
           controller.add(handModel);
           handModels[side] = handModel;
-          // Create a kinematic rigid body for the glove
           const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
           const body = physicsWorld.createRigidBody(bodyDesc);
-          // Create a simple spherical collider (adjust radius as needed)
           const colliderDesc = RAPIER.ColliderDesc.ball(0.1).setSensor(true);
           const collider = physicsWorld.createCollider(colliderDesc, body);
           glovePhysics[side] = { body, collider };
@@ -168,7 +178,7 @@
       loadHandModel(controller1, 'left', 'left_glove.glb');
       loadHandModel(controller2, 'right', 'right_glove.glb');
 
-      // -------------------- LOAD THE BOXER & ADD HITBOX COLLIDERS --------------------
+      // -- BOXER MODEL & HITBOX COLLIDERS --
       let model, mixer, modelParent, boxerGltf, jabCrossClip;
       const loader = new GLTFLoader();
       loader.load('boxer.glb', (gltf) => {
@@ -178,35 +188,25 @@
         modelParent.add(model);
         scene.add(modelParent);
 
-        // Traverse the model: hide hitboxes and set up materials for the rest.
         model.traverse((node) => {
           if (node.isMesh) {
             if (node.name.startsWith('Hit')) {
-              // Hide the visual mesh
               node.visible = false;
-              // *** FIX APPLIED: Create a dynamic rigid body for hitboxes ***
               const bodyDesc = RAPIER.RigidBodyDesc.dynamic();
               const body = physicsWorld.createRigidBody(bodyDesc);
-              // Compute bounding box for the hitbox mesh
               node.geometry.computeBoundingBox();
               const bbox = node.geometry.boundingBox;
               const size = new THREE.Vector3();
               bbox.getSize(size);
-              // Rapier expects half-extents; adjust as needed.
               const hx = (size.x / 2) * 0.1;
               const hy = (size.y / 2) * 0.1;
               const hz = (size.z / 2) * 0.1;
-              // Create a cuboid collider matching the bounding box
               const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
-                // (Optionally, you can set the collider as sensor if needed)
-                // .setSensor(true);
                 .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
-              // Position the collider at the mesh's center in local space
               const center = new THREE.Vector3();
               bbox.getCenter(center);
               colliderDesc.setTranslation(center.x, center.y, center.z);
               const collider = physicsWorld.createCollider(colliderDesc, body);
-              // Store a mapping from collider handle to hitbox name
               hitboxPhysics[node.name] = { body, collider };
               colliderToHitbox[collider.handle] = node.name;
             } else {
@@ -226,7 +226,6 @@
         modelParent.visible = false;
 
         mixer = new THREE.AnimationMixer(model);
-        // Log the names of all animations
         gltf.animations.forEach(clip => {
           console.log('Animation Clip Name:', clip.name);
         });
@@ -241,12 +240,9 @@
       function placeModelOnFloor(floor) {
         if (modelParent) {
           modelParent.visible = true;
-          // Set the boxer's position with an offset
-          const spawnOffset = new THREE.Vector3(0, 0, -2); // Offset of 2 meters in the negative Z direction
+          const spawnOffset = new THREE.Vector3(0, 0, -2);
           modelParent.position.copy(floor.position).add(spawnOffset);
           modelParent.scale.set(250, 250, 250);
-
-          // Emit an event to signal that the scene is ready for collision events
           eventBus.emit('sceneReady');
         }
       }
@@ -270,11 +266,9 @@
         }
       });
 
-      // -------------------- RENDER LOOP & PHYSICS STEP --------------------
+      // ---- MAIN RENDER LOOP ----
       const clock = new THREE.Clock();
-      let collisionEventsEnabled = false; // Flag to control collision events
-
-      // Listen for the sceneReady event
+      let collisionEventsEnabled = false;
       eventBus.on('sceneReady', () => {
         collisionEventsEnabled = true;
         console.log("Scene ready! Collision events enabled.");
@@ -285,85 +279,69 @@
         if (mixer) mixer.update(delta);
         ratk.update();
 
-        // Update glove collider positions from their controllers.
         for (const side in glovePhysics) {
           const { body } = glovePhysics[side];
-          // Get the controller's world position.
           const controller = side === 'left' ? controller1 : controller2;
           const position = new THREE.Vector3();
           controller.getWorldPosition(position);
-          // Update the kinematic body.
           body.setNextKinematicTranslation({ x: position.x, y: position.y, z: position.z });
         }
 
-        // Update boxer hitbox positions:
         if (modelParent && modelParent.visible) {
           modelParent.traverse((node) => {
             if (node.isMesh && node.name.startsWith('Hit')) {
-              // Compute the node's world position.
               const worldPos = new THREE.Vector3();
               node.getWorldPosition(worldPos);
               const { body } = hitboxPhysics[node.name];
-              // For dynamic bodies, we manually override their transform and zero their velocity.
               body.setTranslation({ x: worldPos.x, y: worldPos.y, z: worldPos.z }, true);
               body.setLinvel({ x: 0, y: 0, z: 0 }, true);
             }
           });
         }
 
-        // Process collision events.
         if (collisionEventsEnabled) {
           physicsWorld.step(eventQueue);
           eventQueue.drainCollisionEvents((handle1, handle2, started) => {
-            // Retrieve the hitbox name from the handle
             const hitboxName1 = colliderToHitbox[handle1];
             const hitboxName2 = colliderToHitbox[handle2];
-
             if (hitboxName1 || hitboxName2) {
               const hitboxName = hitboxName1 || hitboxName2;
-              // Retrieve the hitbox's body and collider
-              const { body, collider } = hitboxPhysics[hitboxName];
 
-              // Determine which side is the glove
-              const gloveSide = hitboxName1 ? handle2 : handle1;
-              const glove = Object.entries(glovePhysics).find(([side, { collider }]) => collider.handle === gloveSide);
+              // Glove check
+              const isGlove = Object.values(glovePhysics).some(({ collider }) => collider.handle === handle1 || collider.handle === handle2);
 
-              if (glove) {
-                const gloveSideName = glove[0];
-                const { body: gloveBody, collider: gloveCollider } = glove[1];
+              // Tracked object check, AND label lookup
+              let objectLabel = null;
+              for (const [label, obj] of Object.entries(objectPhysicsColliders)) {
+                if (obj.collider.handle === handle1 || obj.collider.handle === handle2) {
+                  objectLabel = label;
+                  break;
+                }
+              }
+              const isTrackedObject = objectLabel !== null;
 
-                console.log("Collision detected with hitbox:", hitboxName); // ADDED LOG
-
+              if (isGlove || isTrackedObject) {
+                if (isTrackedObject) {
+                  console.log("YOLO Object collision:", objectLabel);
+                }
+                // play hit animation as appropriate
                 if (hitboxName === "Hit_Head" || hitboxName === "Hit_Neck") {
-                  console.log("Calling playHitAnimation for Head Hit"); // ADDED LOG
-                  if (!hitAnimationPlaying) { // ADD THIS CHECK
-                    if (boxerGltf && jabCrossClip) {
-                      playHitAnimation('Head Hit', jabCrossClip, mixer, boxerGltf);
-                    } else {
-                      console.error("Animation resources not ready yet.");
-                    }
-
-                  } else {
-                    console.log("Hit animation already playing, skipping.");
+                  if (!hitAnimationPlaying && boxerGltf && jabCrossClip) {
+                    playHitAnimation('Head Hit', jabCrossClip, mixer, boxerGltf);
                   }
                 }
                 else if (hitboxName === "Hit_Torso") {
-                  console.log("Calling playHitAnimation for Receive Stomach Uppercut"); // ADDED LOG
                   playHitAnimation('Receive Stomach Uppercut', jabCrossClip, mixer, boxerGltf);
                 }
                 else if (hitboxName.endsWith("Leg")) {
-                  console.log("Calling playHitAnimation for Ginga Backward"); // ADDED LOG
                   playHitAnimation('Ginga Backward', jabCrossClip, mixer, boxerGltf);
                 }
-              }
-              else {
-                console.log("No glove found for collision"); // ADDED LOG
               }
             }
           });
         }
 
-        // Ensure the boxer faces the player.
+        // --- Boxer faces player
         if (modelParent && modelParent.visible) {
           const playerPosition = new THREE.Vector3();
           if (renderer.xr.isPresenting && frame) {
@@ -388,17 +366,15 @@
         directionalLight.position.copy(camera.position).add(new THREE.Vector3(0, 2, 2));
         directionalLight.lookAt(modelParent ? modelParent.position : scene.position);
 
-        // Update the debugger
         if (debuggerInstance && debuggerInstance.isEnabled()) {
           debuggerInstance.update();
         }
 
         renderer.render(scene, camera);
       }
-
       renderer.setAnimationLoop(render);
     });
   </script>
 </body>
-
 </html>
+  
